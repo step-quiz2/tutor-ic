@@ -49,6 +49,7 @@ def _new_state():
         "discrepancies": [],
         "hints_requested": 0,
         "finished": None,         # None | "solved" | "abandoned" | "referred"
+        "awaiting_next": False,   # True quan el pas acaba de ser correcte
     }
 
 
@@ -215,8 +216,7 @@ def process_turn(raw: str):
     if v == "correct":
         state["concept_failure_streak"] = 0
         _push("feedback", f"✓ **Correcte.** {reason}".strip())
-        state["current_step_idx"] += 1
-        _maybe_finish()
+        state["awaiting_next"] = True
         return
 
     # Error: incrementem streak per decidir si retrocedim o donem pista.
@@ -378,31 +378,40 @@ def main():
     state = st.session_state.tutor
 
     if state["finished"] is None:
-        # Input. Form clear-on-submit; el botó "Enviar" envia el text.
-        with st.form("answer_form", clear_on_submit=True):
-            answer = st.text_area(
-                "La teva resposta:",
-                key="answer_input",
-                height=100,
-                placeholder="Escriu aquí... (o `?` per a pista, `!text` per discrepància)",
-            )
-            col1, col2, col3 = st.columns([1, 1, 4])
-            with col1:
-                submitted = st.form_submit_button("Enviar ↵")
-            with col2:
-                hint_btn = st.form_submit_button("? Pista")
-            with col3:
-                exit_btn = st.form_submit_button("✕ Sortir")
+        if state["awaiting_next"]:
+            # Mostra el botó "Següent" fins que l'usuari el cliqui
+            if st.button("Següent →", type="primary"):
+                state["messages"] = []
+                state["awaiting_next"] = False
+                state["current_step_idx"] += 1
+                _maybe_finish()
+                st.rerun()
+        else:
+            # Input normal
+            with st.form("answer_form", clear_on_submit=True):
+                answer = st.text_area(
+                    "La teva resposta:",
+                    key="answer_input",
+                    height=100,
+                    placeholder="Escriu aquí... (o `?` per a pista, `!text` per discrepància)",
+                )
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    submitted = st.form_submit_button("Enviar ↵")
+                with col2:
+                    hint_btn = st.form_submit_button("? Pista")
+                with col3:
+                    exit_btn = st.form_submit_button("✕ Sortir")
 
-        if submitted and answer.strip():
-            process_turn(answer)
-            st.rerun()
-        elif hint_btn:
-            process_turn("?")
-            st.rerun()
-        elif exit_btn:
-            process_turn("!!")
-            st.rerun()
+            if submitted and answer.strip():
+                process_turn(answer)
+                st.rerun()
+            elif hint_btn:
+                process_turn("?")
+                st.rerun()
+            elif exit_btn:
+                process_turn("!!")
+                st.rerun()
     else:
         if state["finished"] == "solved":
             st.balloons()
