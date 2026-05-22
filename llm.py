@@ -14,6 +14,7 @@ Variables d'entorn:
 import json
 import os
 import re
+import time
 
 from google import genai
 from google.genai import types as genai_types
@@ -21,6 +22,11 @@ from google.genai import types as genai_types
 import problem as PB
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+# Reintents per a errors transitoris (503 UNAVAILABLE típicament).
+# Tres intents amb backoff lineal són suficients per a una demo.
+MAX_ATTEMPTS = 3
+RETRY_PATTERNS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "INTERNAL", "DEADLINE_EXCEEDED")
 
 _client = None
 
@@ -32,10 +38,16 @@ def _get_client():
     return _client
 
 
+def _is_retriable(err: Exception) -> bool:
+    s = str(err)
+    return any(pat in s for pat in RETRY_PATTERNS)
+
+
 def _call(system: str, user: str, json_mode: bool = True,
           max_tokens: int = 400, temperature: float = 0.2) -> str:
-    """Crida única a Gemini. Sense reintents (per a 20 minuts de demo no
-    en necessitem). Llança excepció si la resposta és buida."""
+    """Crida a Gemini amb reintents per a errors transitoris.
+    Llança l'última excepció si tots els intents fallen, o si l'error
+    és no-retriable (4xx d'autenticació, etc.)."""
     client = _get_client()
     cfg_kwargs = {
         "system_instruction": system,
@@ -48,13 +60,24 @@ def _call(system: str, user: str, json_mode: bool = True,
     if json_mode:
         cfg_kwargs["response_mime_type"] = "application/json"
     cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
-    resp = client.models.generate_content(
-        model=MODEL, contents=user, config=cfg,
-    )
-    text = (resp.text or "").strip()
-    if not text:
-        raise RuntimeError(f"Resposta buida de {MODEL}")
-    return text
+
+    last_err = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            resp = client.models.generate_content(
+                model=MODEL, contents=user, config=cfg,
+            )
+            text = (resp.text or "").strip()
+            if not text:
+                raise RuntimeError(f"Resposta buida de {MODEL}")
+            return text
+        except Exception as e:
+            last_err = e
+            if not _is_retriable(e) or attempt == MAX_ATTEMPTS - 1:
+                raise
+            # Backoff: 1.5s, 3s, 6s
+            time.sleep(1.5 * (2 ** attempt))
+    raise last_err
 
 
 def _parse_json(text: str) -> dict:
