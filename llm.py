@@ -132,10 +132,26 @@ Classifica la resposta en exactament una de:
   "correct"         — interpretació freqüentista correcta, fins i tot
                       si és informal, parcial, o no menciona "a llarg
                       termini" explícitament
-  "typical_error"   — conté l'error clàssic o una variant reconeixible
-  "conceptual_gap"  — l'alumne mostra que no entén la distinció
-                      paràmetre/estadístic (no sap què és μ, parla
-                      de la mostra com si fos la població, etc.)
+  "typical_error"   — l'alumne fa un intent ESTRUCTURAT de raonament,
+                      però és incorrecte. Inclou:
+                       (a) l'error clàssic (atribuir probabilitat al
+                           paràmetre μ) o qualsevol variant
+                           reconeixible
+                       (b) definicions alternatives inventades amb
+                           aparença sofisticada (p.ex. "l'IC és la
+                           unió de tots els intervals que contenen el
+                           paràmetre", "és la mitjana de mitjanes")
+                       (c) confondre l'IC amb una predicció sobre
+                           mostres o observacions futures
+  "conceptual_gap"  — l'alumne demostra que NO té els conceptes
+                      bàsics: no sap què és μ vs x̄, tracta la mostra
+                      com si fos la població, o respon amb evident
+                      desorientació respecte al tema ("no entenc",
+                      "què és això", etc.)
+
+REGLA DE DESEMPAT: si hi ha un raonament identificable encara que
+erroni, prefereix "typical_error". Reserva "conceptual_gap" per a
+casos clars de manca de fonament conceptual.
 
 Respon ÚNICAMENT amb JSON vàlid, sense markdown ni preàmbul:
 {"verdict": "...", "reason": "una frase breu en català dirigida a
@@ -179,6 +195,13 @@ def judge_step(step: dict, student_answer: str) -> dict:
     """
     Avalua la resposta de l'alumne.
     Retorna: {verdict, reason, error_label}
+
+    Llança excepció si Gemini falla després dels reintents interns de
+    `_call` (típicament 503 UNAVAILABLE). L'invocador (app.process_turn)
+    l'ha de capturar i tractar com un incident tècnic — NO com un error
+    de l'alumne. Anteriorment es retornava un fals 'typical_error' aquí
+    mateix, cosa que feia que una caiguda transitòria del proveïdor es
+    comptabilitzés com a fallada conceptual.
     """
     user_msg = f"""
 Pas presentat a l'alumne:
@@ -195,15 +218,7 @@ Resposta de l'alumne:
 
 Classifica la resposta.
 """.strip()
-    try:
-        raw = _call(_SYSTEM_JUDGE, user_msg, json_mode=True, max_tokens=300)
-    except Exception as e:
-        # Fallback defensiu: si la IA falla, no bloquegem l'alumne.
-        return {
-            "verdict": "typical_error",
-            "reason": f"(Error tècnic de la IA: {e}) Torna-ho a provar.",
-            "error_label": None,
-        }
+    raw = _call(_SYSTEM_JUDGE, user_msg, json_mode=True, max_tokens=300)
     data = _parse_json(raw)
     v = data.get("verdict", "typical_error")
     if v not in ("correct", "typical_error", "conceptual_gap"):

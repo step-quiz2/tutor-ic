@@ -26,6 +26,16 @@ st.set_page_config(page_title="Tutor IC", page_icon="📊", layout="centered")
 
 
 # ============================================================
+# Constants
+# ============================================================
+# Llindar mínim de caràcters per considerar una resposta com a intent
+# real abans de cridar la IA. Per sota d'aquest llindar, mostrem un
+# avís suau i NO toquem ni streak ni historial. Les respostes vàlides
+# esperades al problema IC-001 estan totes molt per sobre.
+MIN_ANSWER_CHARS = 10
+
+
+# ============================================================
 # Estat de la sessió
 # ============================================================
 def _new_state():
@@ -160,10 +170,33 @@ def process_turn(raw: str):
         _process_prereq_turn(s)
         return
 
+    # --- Guard contra entrades no substantives ---
+    # Filtrem respostes massa curtes per ser un intent real ("patata",
+    # "no sé", "tututru"). No comptabilitza streak ni s'afegeix a
+    # l'historial: és com si l'alumne no hagués premut "Enviar". Així
+    # evitem que la IA hagi de classificar tonteries i que apareguin
+    # `conceptual_gap` per a entrades trivials.
+    if len(s) < MIN_ANSWER_CHARS:
+        _push("warning",
+              "✏️ La teva resposta és massa curta per avaluar-la bé. "
+              "Desenvolupa la idea (almenys una frase completa) i "
+              "torna-la a enviar.")
+        return
+
     # --- Pas normal: avaluació via IA ---
     step = PB.PROBLEM["passos"][state["current_step_idx"]]
-    with st.spinner("Avaluant resposta..."):
-        verdict_obj = L.judge_step(step, s)
+    try:
+        with st.spinner("Avaluant resposta..."):
+            verdict_obj = L.judge_step(step, s)
+    except Exception as e:
+        # Errors transitoris després dels reintents interns de `_call`
+        # (típicament 503 UNAVAILABLE de Gemini). NO afectem streak ni
+        # historial: és un incident tècnic, no un error de l'alumne.
+        # L'alumne pot tornar a enviar la mateixa resposta.
+        _push("warning",
+              "⚠️ El servei d'avaluació no respon ara mateix. "
+              "Torna a enviar la mateixa resposta d'aquí uns segons.")
+        return
 
     v = verdict_obj["verdict"]
     reason = verdict_obj.get("reason", "")
