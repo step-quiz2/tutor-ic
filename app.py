@@ -10,9 +10,14 @@ Senyals especials que l'alumne pot teclejar:
     !text    → registra discrepància («tinc raó perquè...») i avança
     !!       → tanca la sessió
 
-Tot l'estat de la sessió viu a `st.session_state.tutor`. Es perd quan
-es tanca la finestra: no hi ha persistència a disc. Per a 20 minuts de
-demo és suficient.
+Estat top-level de st.session_state (NO es reseteja amb "Reiniciar sessió"):
+    disclaimer_acknowledged : bool. L'usuari ha acceptat l'avís d'ús.
+    api_calls_used          : int. Comptador de crides a la IA durant
+                              tota la sessió de navegador. Persistent
+                              entre reinicis per evitar que un alumne
+                              reinicii per recuperar quota.
+
+Estat per problema (st.session_state.tutor): es reseteja amb "Reiniciar".
 """
 
 import json
@@ -28,44 +33,75 @@ st.set_page_config(page_title="Tutor IC", page_icon="📊", layout="centered")
 # ============================================================
 # Constants
 # ============================================================
-# Llindar mínim de caràcters per considerar una resposta com a intent
-# real abans de cridar la IA. Per sota d'aquest llindar, mostrem un
-# avís suau i NO toquem ni streak ni historial. Les respostes vàlides
-# esperades al problema IC-001 estan totes molt per sobre.
 MIN_ANSWER_CHARS = 10
+
+# Sostre de crides a la IA per sessió de navegador. Una sessió típica
+# raonable consumeix entre 4 i 12 crides (3 passos × 1-2 crides + alguna
+# pista). 20 dona prou marge per a retrocés a prereq + un parell de
+# pistes, però talla l'abús d'un input spamejat.
+MAX_API_CALLS_PER_SESSION = 20
+
+DISCLAIMER_TEXT = """
+**Atenció, aquest programa està en mode DEBUG / desenvolupament.**
+
+Recorda: **no pots escriure cap dada personal, familiar o financera.**
+No escriguis el teu nom, el teu PIN, adreces, telèfons, números de
+compte, ni cap altra dada identificativa de tu mateix o de tercers.
+
+Respon **exclusivament** amb raonaments de matemàtiques o d'estadística.
+"""
 
 
 # ============================================================
-# Estat de la sessió
+# Estat tutorial (per problema)
 # ============================================================
 def _new_state():
     return {
         "started_at": time.time(),
         "current_step_idx": 0,
-        "history": [],            # tots els torns enviats
-        "messages": [],           # missatges visibles a la UI (per al torn actual)
-        "active_prereq": None,    # id del prereq actiu, o None
+        "history": [],
+        "messages": [],
+        "active_prereq": None,
         "concept_failure_streak": 0,
         "discrepancies": [],
         "hints_requested": 0,
-        "finished": None,         # None | "solved" | "abandoned" | "referred"
-        "awaiting_next": False,   # True quan el pas acaba de ser correcte
+        "finished": None,
+        "awaiting_next": False,
     }
 
 
 def _push(kind: str, text: str, persistent: bool = False):
-    """kind ∈ {system, feedback, hint, prereq, prereq_done, discrepancy, warning}"""
     st.session_state.tutor["messages"].append({
         "kind": kind, "text": text, "persistent": persistent,
     })
 
 
 # ============================================================
+# Gestió de quota d'API
+# ============================================================
+def _api_quota_exhausted() -> bool:
+    return st.session_state.get("api_calls_used", 0) >= MAX_API_CALLS_PER_SESSION
+
+
+def _consume_api_quota():
+    """Incrementa el comptador. Cridar JUST ABANS de cada crida a llm."""
+    st.session_state.api_calls_used = (
+        st.session_state.get("api_calls_used", 0) + 1
+    )
+
+
+def _push_quota_exhausted_warning():
+    _push("warning",
+          f"⚠️ Has arribat al límit de {MAX_API_CALLS_PER_SESSION} "
+          "crides d'aquesta sessió. Per continuar, tanca i torna a "
+          "obrir l'aplicació al navegador.")
+
+
+# ============================================================
 # Lògica nuclear del torn
 # ============================================================
 def _process_prereq_turn(answer: str):
-    """L'alumne respon dins del mini-exercici PRE-PARAM. Validació
-    deterministica per keyword matching."""
+    """Validació deterministica per keyword matching. Cap crida a IA."""
     state = st.session_state.tutor
     pre = PB.PREREQUISITES[state["active_prereq"]]
     low = answer.lower()
@@ -96,7 +132,6 @@ def _process_prereq_turn(answer: str):
 
 
 def _activate_prereq():
-    """Activa el mini-exercici de reforç."""
     state = st.session_state.tutor
     pre_id = PB.DEPENDENCIES["param_vs_stat"]["prerequisite"]
     pre = PB.PREREQUISITES[pre_id]
@@ -116,38 +151,55 @@ def _maybe_finish():
               "evitant l'error clàssic. Bona feina.")
 
 
-def process_turn(raw: str):
-    """Punt d'entrada únic. Modifica `st.session_state.tutor` directament."""
-    state = st.session_state.tutor
+def _try_generate_hint(step) -> bool:
+    """Genera una pista respectant la quota i mostra els missatges UI.
+    Retorna True si s'ha generat alguna pista, False si la quota era
+    plena o hi ha hagut error tècnic."""
+    if _api_quota_exhausted():
+        _push_quota_exhausted_warning()
+        return False
+    _consume_api_quota()
+    try:
+        with st.spinner("Generant pista..."):
+            hint = L.generate_hint(step, "param_vs_stat")
+        _push("hint", f"💡 {hint}")
+        return True
+    except Exception:
+        _push("warning",
+              "⚠️ No s'ha pogut generar la pista (servei IA no disponible). "
+              "Pots tornar-ho a provar.")
+        return False
 
-    # Neteja missatges no persistents (els persistents són feedbacks de
-    # prereq que volem que l'alumne segueixi veient).
+
+def process_turn(raw: str):
+    state = st.session_state.tutor
     state["messages"] = [m for m in state["messages"] if m["persistent"]]
 
     s = (raw or "").strip()
     if not s:
         return
 
-    # --- Senyals d'escapament ---
+    # --- Senyals d'escapament: cap crida API ---
     if s in ("!!", ":q", "exit"):
         state["finished"] = "abandoned"
         _push("system", "Sessió tancada. Rastre desat.")
         return
 
     if s == "?":
-        # Demana pista. Si estem dins de prereq, mostrem l'explicació.
+        # Dins de prereq la pista és deterministica (sense API). Fora,
+        # cal generar amb la IA i això consumeix quota.
         if state["active_prereq"] is not None:
             pre = PB.PREREQUISITES[state["active_prereq"]]
             _push("hint", pre["explanation"])
+            state["hints_requested"] += 1
         else:
             step = PB.PROBLEM["passos"][state["current_step_idx"]]
-            with st.spinner("Generant pista..."):
-                hint = L.generate_hint(step, "param_vs_stat")
-            _push("hint", f"💡 {hint}")
-        state["hints_requested"] += 1
+            if _try_generate_hint(step):
+                state["hints_requested"] += 1
         return
 
     if s.startswith("!") and len(s) > 1:
+        # Discrepància: cap crida API.
         payload = s[1:].strip()
         state["discrepancies"].append({
             "step": state["current_step_idx"] + 1,
@@ -166,17 +218,12 @@ def process_turn(raw: str):
         _maybe_finish()
         return
 
-    # --- Sessió de prerequisit activa ---
+    # --- Sessió de prerequisit activa: validació deterministica ---
     if state["active_prereq"] is not None:
         _process_prereq_turn(s)
         return
 
-    # --- Guard contra entrades no substantives ---
-    # Filtrem respostes massa curtes per ser un intent real ("patata",
-    # "no sé", "tututru"). No comptabilitza streak ni s'afegeix a
-    # l'historial: és com si l'alumne no hagués premut "Enviar". Així
-    # evitem que la IA hagi de classificar tonteries i que apareguin
-    # `conceptual_gap` per a entrades trivials.
+    # --- Guard contra entrades no substantives (sense crida IA) ---
     if len(s) < MIN_ANSWER_CHARS:
         _push("warning",
               "✏️ La teva resposta és massa curta per avaluar-la bé. "
@@ -184,16 +231,17 @@ def process_turn(raw: str):
               "torna-la a enviar.")
         return
 
-    # --- Pas normal: avaluació via IA ---
+    # --- Pas normal: avaluació via IA (consumeix quota) ---
+    if _api_quota_exhausted():
+        _push_quota_exhausted_warning()
+        return
+
     step = PB.PROBLEM["passos"][state["current_step_idx"]]
+    _consume_api_quota()
     try:
         with st.spinner("Avaluant resposta..."):
             verdict_obj = L.judge_step(step, s)
-    except Exception as e:
-        # Errors transitoris després dels reintents interns de `_call`
-        # (típicament 503 UNAVAILABLE de Gemini). NO afectem streak ni
-        # historial: és un incident tècnic, no un error de l'alumne.
-        # L'alumne pot tornar a enviar la mateixa resposta.
+    except Exception:
         _push("warning",
               "⚠️ El servei d'avaluació no respon ara mateix. "
               "Torna a enviar la mateixa resposta d'aquí uns segons.")
@@ -219,31 +267,20 @@ def process_turn(raw: str):
         state["awaiting_next"] = True
         return
 
-    # Error: incrementem streak per decidir si retrocedim o donem pista.
     state["concept_failure_streak"] += 1
     streak = state["concept_failure_streak"]
-
-    # Mostrem missatge del catàleg si tenim etiqueta coneguda.
     cat_msg = PB.ERROR_CATALOG.get(label or "", "") if label else ""
     feedback = cat_msg or reason or "La resposta no és correcta."
     _push("feedback", f"✗ {feedback}")
 
     if v == "conceptual_gap":
-        # Primera fallada conceptual → retrocés a prereq.
-        # Segona fallada del mateix concepte → pista socràtica directa.
         if streak >= 2:
-            with st.spinner("Generant pista..."):
-                hint = L.generate_hint(step, "param_vs_stat")
-            _push("hint", f"💡 {hint}")
+            _try_generate_hint(step)
         else:
             _activate_prereq()
     elif v == "typical_error":
-        # Error clàssic. Donem una empenta socràtica directament si ja
-        # ha fallat dos cops el mateix concepte.
         if streak >= 2:
-            with st.spinner("Generant pista..."):
-                hint = L.generate_hint(step, "param_vs_stat")
-            _push("hint", f"💡 {hint}")
+            _try_generate_hint(step)
 
 
 # ============================================================
@@ -252,21 +289,39 @@ def process_turn(raw: str):
 def build_trace() -> dict:
     state = st.session_state.tutor
     return {
-        "problema":     PB.PROBLEM["id"],
-        "tema":         PB.PROBLEM["tema"],
-        "started_at":   state["started_at"],
-        "durada_s":     round(time.time() - state["started_at"], 1),
+        "problema": PB.PROBLEM["id"],
+        "tema": PB.PROBLEM["tema"],
+        "started_at": state["started_at"],
+        "durada_s": round(time.time() - state["started_at"], 1),
         "passos_totals": len(PB.PROBLEM["passos"]),
-        "pas_assolit":  state["current_step_idx"],
-        "torns":        state["history"],
+        "pas_assolit": state["current_step_idx"],
+        "torns": state["history"],
         "discrepancies": state["discrepancies"],
         "pistes_demanades": state["hints_requested"],
-        "veredicte":    state["finished"] or "en_curs",
+        "crides_api_usades_sessio": st.session_state.get("api_calls_used", 0),
+        "crides_api_limit_sessio": MAX_API_CALLS_PER_SESSION,
+        "veredicte": state["finished"] or "en_curs",
     }
 
 
 # ============================================================
-# UI
+# UI: pantalla d'avís inicial
+# ============================================================
+def render_disclaimer():
+    st.title("⚠️ Avís d'ús")
+    st.warning(DISCLAIMER_TEXT)
+    st.markdown("---")
+    acknowledged = st.checkbox(
+        "**Comprenc el que he llegit** i em comprometo a no introduir "
+        "cap dada personal."
+    )
+    if st.button("Començar", type="primary", disabled=not acknowledged):
+        st.session_state.disclaimer_acknowledged = True
+        st.rerun()
+
+
+# ============================================================
+# UI: aplicació principal
 # ============================================================
 def render_sidebar():
     with st.sidebar:
@@ -285,10 +340,16 @@ def render_sidebar():
             st.rerun()
         st.markdown("---")
         st.caption(f"Model: `{L.MODEL}`")
-        if "tutor" in st.session_state:
-            t = st.session_state.tutor
-            n_calls = sum(1 for h in t["history"] if h.get("type") == "step")
-            st.caption(f"Crides IA: {n_calls}")
+        # Indicador de quota usada per a tota la sessió de navegador.
+        used = st.session_state.get("api_calls_used", 0)
+        remaining = MAX_API_CALLS_PER_SESSION - used
+        msg = f"Crides API: {used} / {MAX_API_CALLS_PER_SESSION}"
+        if remaining > 5:
+            st.caption(msg)
+        elif remaining > 0:
+            st.warning(f"{msg}  (queden {remaining})")
+        else:
+            st.error(f"{msg}  (límit assolit)")
 
 
 def render_problem_header():
@@ -368,6 +429,20 @@ def render_trace():
 # Main
 # ============================================================
 def main():
+    # Estat top-level (no es reseteja amb "Reiniciar sessió").
+    if "disclaimer_acknowledged" not in st.session_state:
+        st.session_state.disclaimer_acknowledged = False
+    if "api_calls_used" not in st.session_state:
+        st.session_state.api_calls_used = 0
+
+    # Gate: si encara no s'ha acceptat l'avís, només mostrem la pantalla
+    # d'avís. Cap altra cosa es renderitza fins que l'usuari cliqui
+    # "Començar".
+    if not st.session_state.disclaimer_acknowledged:
+        render_disclaimer()
+        return
+
+    # Estat tutorial per a aquest problema.
     if "tutor" not in st.session_state:
         st.session_state.tutor = _new_state()
 
@@ -379,7 +454,6 @@ def main():
 
     if state["finished"] is None:
         if state["awaiting_next"]:
-            # Mostra el botó "Següent" fins que l'usuari el cliqui
             if st.button("Següent →", type="primary"):
                 state["messages"] = []
                 state["awaiting_next"] = False
@@ -387,7 +461,6 @@ def main():
                 _maybe_finish()
                 st.rerun()
         else:
-            # Input normal
             with st.form("answer_form", clear_on_submit=True):
                 answer = st.text_area(
                     "La teva resposta:",
