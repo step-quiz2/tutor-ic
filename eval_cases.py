@@ -9,6 +9,9 @@ Categories de cas (per cada pas):
   CORR — Resposta canònica o variant clarament correcta
   TYP  — Error típic catalogat (l'error clàssic d'atribuir
          probabilitat a μ, o variants reconeixibles)
+  KEY  — Resposta-keyword (típicament breu): conté el mot pertinent
+         però no el justifica ni l'aplica. Categoria descoberta
+         durant el stress test de sessió en directe.
   GAP  — Buit conceptual genuí (l'alumne no té els fonaments)
 
 Convenció d'id: S{step}-{categoria}-{seq}
@@ -116,6 +119,24 @@ CASES = [
         "expected_verdict": "typical_error",
         "expected_error_label": None,  # podria ser INT_prob_sample
         "tags": ["confusió-mostres-futures"],
+    },
+
+    # ---- KEY_only — descoberta del stress test ----
+    {
+        "id": "S1-KEY-01",
+        "step_id": 1,
+        "input": "si repetim el mostreig moltes vegades",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "incomplet", "discovered-in-stress-test"],
+    },
+    {
+        "id": "S1-KEY-02",
+        "step_id": 1,
+        "input": "es refereix al procediment",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "no-aplica"],
     },
 
     # ---- CONCEPTUAL_GAP — sense fonament conceptual ----
@@ -241,6 +262,24 @@ CASES = [
         "tags": ["raonament-erroni-invertit"],
     },
 
+    # ---- KEY_only — descoberta del stress test ----
+    {
+        "id": "S2-KEY-01",
+        "step_id": 2,
+        "input": "mu és constant",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "no-justifica", "discovered-in-stress-test"],
+    },
+    {
+        "id": "S2-KEY-02",
+        "step_id": 2,
+        "input": "perquè és un paràmetre fix",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "no-justifica"],
+    },
+
     # ---- CONCEPTUAL_GAP ----
     {
         "id": "S2-GAP-01",
@@ -359,6 +398,24 @@ CASES = [
         "expected_verdict": "typical_error",
         "expected_error_label": None,
         "tags": ["confusió-mostres-futures"],
+    },
+
+    # ---- KEY_only — descoberta del stress test ----
+    {
+        "id": "S3-KEY-01",
+        "step_id": 3,
+        "input": "tinc una confiança del 95%",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "sense-objecte", "discovered-in-stress-test"],
+    },
+    {
+        "id": "S3-KEY-02",
+        "step_id": 3,
+        "input": "és una qüestió de confiança, no de probabilitat",
+        "expected_verdict": "typical_error",
+        "expected_error_label": "KEY_only",
+        "tags": ["keyword-only", "no-aplica"],
     },
 
     # ---- CONCEPTUAL_GAP ----

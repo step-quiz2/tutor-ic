@@ -14,6 +14,13 @@ ERROR_CATALOG = {
     "INT_prob_sample": (
         "Confon l'IC amb una afirmació sobre futures mostres."
     ),
+    "KEY_only": (
+        "Resposta-keyword: conté un terme correcte (constant, fix, "
+        "paràmetre, confiança, repetició, procediment...) però no el "
+        "justifica ni l'aplica a la pregunta concreta. Cal desenvolupar "
+        "el raonament: explicar QUÈ vol dir el terme en aquest context "
+        "i PER QUÈ respon la pregunta."
+    ),
     "GEN_other": "Error no catalogat.",
 }
 

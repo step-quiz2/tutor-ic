@@ -26,7 +26,8 @@ MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 # Reintents per a errors transitoris (503 UNAVAILABLE típicament).
 # Tres intents amb backoff lineal són suficients per a una demo.
 MAX_ATTEMPTS = 3
-RETRY_PATTERNS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "INTERNAL", "DEADLINE_EXCEEDED")
+RETRY_PATTERNS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
+                  "500", "INTERNAL", "DEADLINE_EXCEEDED")
 
 _client = None
 
@@ -34,7 +35,13 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        key = os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "GEMINI_API_KEY no està definida. "
+                "Fes 'export GEMINI_API_KEY=...' abans d'executar."
+            )
+        _client = genai.Client(api_key=key)
     return _client
 
 
@@ -129,11 +136,20 @@ REGLA IMPORTANT: si la resposta de l'alumne conté l'error clàssic
 60% bé si el 40% conté l'error clàssic.
 
 Classifica la resposta en exactament una de:
-  "correct"         — interpretació freqüentista correcta, fins i tot
-                      si és informal, parcial, o no menciona "a llarg
-                      termini" explícitament
-  "typical_error"   — l'alumne fa un intent ESTRUCTURAT de raonament,
-                      però és incorrecte. Inclou:
+
+  "correct"         — interpretació freqüentista correcta i
+                      AUTO-SUFICIENT. Una resposta auto-suficient
+                      conté tant (a) el concepte clau pertinent al
+                      pas (μ fix/constant, repetició de mostres,
+                      confiança vs. probabilitat...) com (b) la seva
+                      APLICACIÓ explícita a la pregunta del pas
+                      (què vol dir el concepte aquí, o com respon
+                      la pregunta). Pot ser concisa o informal, però
+                      els dos elements (concepte + aplicació) han de
+                      ser-hi sense que l'examinador hagi d'afegir-los.
+
+  "typical_error"   — l'alumne fa un intent de raonament però és
+                      incorrecte. Inclou:
                        (a) l'error clàssic (atribuir probabilitat al
                            paràmetre μ) o qualsevol variant
                            reconeixible
@@ -143,15 +159,39 @@ Classifica la resposta en exactament una de:
                            paràmetre", "és la mitjana de mitjanes")
                        (c) confondre l'IC amb una predicció sobre
                            mostres o observacions futures
+                       (d) RESPOSTA-KEYWORD: conté un mot o sintagma
+                           pertinent (constant, fix, paràmetre,
+                           confiança, repetició, procediment...)
+                           però NO el justifica ni l'aplica a la
+                           pregunta concreta. Etiqueta: KEY_only.
+
   "conceptual_gap"  — l'alumne demostra que NO té els conceptes
                       bàsics: no sap què és μ vs x̄, tracta la mostra
                       com si fos la població, o respon amb evident
                       desorientació respecte al tema ("no entenc",
                       "què és això", etc.)
 
-REGLA DE DESEMPAT: si hi ha un raonament identificable encara que
-erroni, prefereix "typical_error". Reserva "conceptual_gap" per a
-casos clars de manca de fonament conceptual.
+CONTRAEXEMPLES (cap d'aquests és "correct"; tots són typical_error
+amb error_label KEY_only):
+  Pas 1 ("Probabilitat sobre què?") → "si repetim el mostreig
+    moltes vegades" (té el concepte de repetició però no diu què
+    passa amb la repetició)
+  Pas 2 ("Per què és incorrecta?") → "mu és constant" (té el
+    concepte μ-fix però no explica per què fa la frase incorrecta)
+  Pas 3 ("Dona una interpretació") → "tinc una confiança del 95%"
+    (repeteix el terme del pas sense aplicar-lo: confiança sobre
+    què? sobre quin interval? sobre μ?)
+
+REGLA DE DESEMPAT 1 (auto-suficiència): abans de marcar "correct",
+llegeix la resposta sense afegir-hi cap context. Si per fer-la
+"sonar correcta" hauries d'introduir tu mateix la justificació o la
+conclusió al camp "reason", NO és "correct" — és typical_error amb
+error_label KEY_only.
+
+REGLA DE DESEMPAT 2 (raonament estructurat vs. buit): si hi ha un
+raonament identificable encara que erroni, prefereix "typical_error"
+abans que "conceptual_gap". Reserva "conceptual_gap" per a casos
+clars de manca de fonament conceptual.
 
 Respon ÚNICAMENT amb JSON vàlid, sense markdown ni preàmbul:
 {"verdict": "...", "reason": "una frase breu en català dirigida a
@@ -199,9 +239,7 @@ def judge_step(step: dict, student_answer: str) -> dict:
     Llança excepció si Gemini falla després dels reintents interns de
     `_call` (típicament 503 UNAVAILABLE). L'invocador (app.process_turn)
     l'ha de capturar i tractar com un incident tècnic — NO com un error
-    de l'alumne. Anteriorment es retornava un fals 'typical_error' aquí
-    mateix, cosa que feia que una caiguda transitòria del proveïdor es
-    comptabilitzés com a fallada conceptual.
+    de l'alumne.
     """
     user_msg = f"""
 Pas presentat a l'alumne:
