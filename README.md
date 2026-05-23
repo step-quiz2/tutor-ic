@@ -60,7 +60,7 @@ minuts de demo amb la quota gratuïta sense apropar-te al límit.
 | Fitxer | Què fa |
 |---|---|
 | `problem.py` | El problema, els passos, el prerequisit, el catàleg d'errors |
-| `llm.py` | Tres crides a Gemini (`judge_step`, `diagnose_dependency`, `generate_hint`) |
+| `llm.py` | Quatre crides a Gemini (`judge_step`, `judge_prereq`, `generate_hint`, `generate_prereq_hint`); `judge_step` i `judge_prereq` poden re-mostrejar quan reporten baixa confiança |
 | `app.py` | UI Streamlit + lògica de torn + rastre JSON |
 | `requirements.txt` | Dependències (Streamlit + google-genai) |
 
