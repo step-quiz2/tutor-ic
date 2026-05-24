@@ -38,7 +38,7 @@ import problem as PB
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v1.1"
+PROMPT_VERSION = "v1.2"
 
 # Reintents per a errors transitoris de l'API.
 MAX_ATTEMPTS = 3
