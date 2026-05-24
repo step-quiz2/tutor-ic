@@ -69,14 +69,22 @@ header[data-testid="stHeader"] { display: none; }
 #MainMenu { display: none; }
 footer { display: none; }
 
-/* Font reduïda un 10% respecte v1 (1.2rem → 1.08rem) */
+/* Reducció agressiva del marge superior: Streamlit afegeix padding al
+   block-container, marge a l'h1, i un decorador d'app pintat al damunt.
+   Cal atacar-ho a tres llocs. */
+.stApp > [data-testid="stDecoration"] { display: none; }
 .main .block-container {
     font-size: 1.08rem;
-    padding-top: 0.5rem;
+    padding-top: 0.5rem !important;
     max-width: 780px;
 }
 .stMarkdown p, .stMarkdown li { font-size: 1.08rem; line-height: 1.6; }
-h1 { font-size: 1.65rem !important; margin-bottom: 1.5rem !important; }
+h1 {
+    font-size: 1.65rem !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    margin-bottom: 1.2rem !important;
+}
 
 /* Targeta del tutor */
 .tutor-card {
@@ -102,6 +110,12 @@ h1 { font-size: 1.65rem !important; margin-bottom: 1.5rem !important; }
 .tutor-body p { margin: 0.6em 0; }
 .tutor-body p:first-child { margin-top: 0; }
 .tutor-body p:last-child { margin-bottom: 0; }
+.pregunta-label {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 0 0 0.8rem 0;
+    color: rgba(0,0,0,0.78);
+}
 .tutor-body blockquote {
     border-left: 3px solid rgba(0,0,0,0.18);
     padding: 0.3rem 0 0.3rem 0.8rem;
@@ -291,12 +305,18 @@ def position_label(state):
 def render_tutor_card(text, color, badge=None):
     badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
     body_html = simple_md_to_html(text)
+    # Etiqueta "Pregunta." al damunt del cos. Decisió arquitectònica:
+    # la presentació del format del missatge és responsabilitat de
+    # Python, no del model. El model escriu el contingut lliurement;
+    # el renderer afegeix l'etiqueta uniforme.
+    pregunta_label = '<p class="pregunta-label">Pregunta.</p>'
     html = (
         f'<div class="tutor-card tutor-{color}">'
         f'<div class="tutor-header">'
         f'<span>🎓 Tutor</span>'
         f"{badge_html}"
         f"</div>"
+        f"{pregunta_label}"
         f'<div class="tutor-body">{body_html}</div>'
         f"</div>"
     )
@@ -530,7 +550,7 @@ def render_summary_view(state):
 
 def main():
     st.markdown(CSS, unsafe_allow_html=True)
-    st.title("Tutor d'intervals de confiança")
+    st.title("Tutoria (intervals de confiança)")
 
     if "state" not in st.session_state:
         st.session_state.state = S.new_session()

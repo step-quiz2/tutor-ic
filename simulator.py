@@ -62,11 +62,14 @@ RESET = "\033[0m"
 
 def new_session():
     """Estat inicial. El tutor obre la conversa amb una presentació +
-    pregunta del Pas 1 generada per Python (sense crida LLM)."""
+    pregunta del Pas 1 generada per Python (sense crida LLM).
+
+    Aquesta funció no afegeix cap etiqueta "Pregunta." al contingut —
+    aquesta decoració es fa al renderer (app.py per a Streamlit). El
+    CLI (simulator.py) no l'afegeix; mostra el text en cru."""
     opening = (
-        f"Hola. Treballarem un problema d'inferència estadística junts.\n\n"
         f"{PB.PROBLEM['enunciat']}\n\n"
-        f"Comencem pel primer pas: {PB.PROBLEM['passos'][0]['text']}"
+        f"{PB.PROBLEM['passos'][0]['text']}"
     )
     return {
         "started_at": time.time(),
