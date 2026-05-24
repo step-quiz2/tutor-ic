@@ -62,32 +62,21 @@ HINT_MARKER = "(L'alumne demana una pista)"
 
 CSS = """
 <style>
-/* Font +20% al contingut principal */
+/* Amaga la barra superior de Streamlit (3 puntets, hamburguesa, etc.)
+   i el peu "Made with Streamlit". Recupera l'espai vertical que es
+   menjaven. */
+header[data-testid="stHeader"] { display: none; }
+#MainMenu { display: none; }
+footer { display: none; }
+
+/* Font reduïda un 10% respecte v1 (1.2rem → 1.08rem) */
 .main .block-container {
-    font-size: 1.2rem;
-    padding-top: 2rem;
+    font-size: 1.08rem;
+    padding-top: 0.5rem;
     max-width: 780px;
 }
-.stMarkdown p, .stMarkdown li { font-size: 1.2rem; line-height: 1.6; }
-h1 { font-size: 1.8rem !important; margin-bottom: 1.5rem !important; }
-
-/* Capçalera persistent amb l'enunciat */
-.problem-card {
-    background: #f0f4f8;
-    border-left: 4px solid #1565c0;
-    padding: 1rem 1.25rem;
-    margin-bottom: 1.75rem;
-    border-radius: 6px;
-}
-.problem-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #1565c0;
-    margin-bottom: 0.35rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-.problem-text { font-size: 1.05rem; line-height: 1.55; color: #1a2733; }
+.stMarkdown p, .stMarkdown li { font-size: 1.08rem; line-height: 1.6; }
+h1 { font-size: 1.65rem !important; margin-bottom: 1.5rem !important; }
 
 /* Targeta del tutor */
 .tutor-card {
@@ -109,7 +98,7 @@ h1 { font-size: 1.8rem !important; margin-bottom: 1.5rem !important; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
-.tutor-body { font-size: 1.15rem; }
+.tutor-body { font-size: 1.05rem; }
 .tutor-body p { margin: 0.6em 0; }
 .tutor-body p:first-child { margin-top: 0; }
 .tutor-body p:last-child { margin-bottom: 0; }
@@ -159,8 +148,8 @@ h1 { font-size: 1.8rem !important; margin-bottom: 1.5rem !important; }
     margin-bottom: 2rem;
     border-radius: 14px;
 }
-.summary-header h1 { margin: 0 0 0.5rem 0 !important; font-size: 2rem !important; }
-.summary-header p { margin: 0; opacity: 0.85; font-size: 1.1rem; }
+.summary-header h1 { margin: 0 0 0.5rem 0 !important; font-size: 1.8rem !important; }
+.summary-header p { margin: 0; opacity: 0.85; font-size: 1.0rem; }
 .summary-success { background: #e8f5e9; border: 2px solid #2e7d32; color: #1b5e20; }
 .summary-neutral { background: #f5f5f5; border: 2px solid #9e9e9e; color: #424242; }
 </style>
@@ -299,16 +288,6 @@ def position_label(state):
 # Render: components
 # =============================================================================
 
-def render_problem_header():
-    html = (
-        f'<div class="problem-card">'
-        f'<div class="problem-label">Problema</div>'
-        f'<div class="problem-text">{simple_md_to_html(PB.PROBLEM["enunciat"])}</div>'
-        f"</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-
-
 def render_tutor_card(text, color, badge=None):
     badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
     body_html = simple_md_to_html(text)
@@ -340,8 +319,6 @@ def render_thinking_card():
 
 def render_chat_view(state):
     """Mostra només el torn actual: cap historial al viewport."""
-    render_problem_header()
-
     latest_tutor = next(
         (t["content"] for t in reversed(state["transcript"])
          if t["role"] == "tutor"),
