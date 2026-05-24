@@ -291,6 +291,14 @@ def run_session(debug_mode=False, save_path=None, use_color=True):
 
         state["last_raw_output"] = result["raw_output"]
 
+        # Afegim la resposta del tutor al transcript. Sense aquesta línia,
+        # cada crida posterior enviaria una seqüència de missatges 'student'
+        # consecutius (violant l'alternança user/model que espera Gemini) i
+        # el model perdria memòria del que ha dit en torns anteriors —
+        # quedant-li només el position_marker com a font de veritat.
+        # Veure `test_tutor_turn.py` Test 17/18.
+        state["transcript"].append({"role": "tutor", "content": result["reply"]})
+
         # Anotació al rastre detallat
         position_before = {"step": state["current_step"],
                            "prereq": state["active_prereq"]}

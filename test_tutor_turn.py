@@ -221,14 +221,13 @@ check("ordre rol: model, user, model, user",
 check("primer text correcte (sense marcador)",
       c[0]["parts"][0]["text"] == "Welcome")
 check("primer torn user NO té marcador",
-      "[Pas " not in c[1]["parts"][0]["text"])
+      "[Posició actual:" not in c[1]["parts"][0]["text"])
 check("últim missatge user conté el text de l'alumne",
       "Resposta 2" in c[3]["parts"][0]["text"])
-check("últim missatge user té el marcador de posició (v1.2)",
-      "[Pas 2 de 3" in c[3]["parts"][0]["text"])
-check("marcador inclou directiva advance/stay",
-      "advance" in c[3]["parts"][0]["text"]
-      and "stay" in c[3]["parts"][0]["text"])
+check("últim missatge user té el marcador de posició (v1.1)",
+      "[Posició actual:" in c[3]["parts"][0]["text"])
+check("marcador inclou 'Pas 2 de 3'",
+      "Pas 2 de 3" in c[3]["parts"][0]["text"])
 check("system_instruction passat", captured["system"] is not None)
 
 
@@ -291,35 +290,26 @@ for i, (raw, expected_action) in enumerate(samples):
 
 
 # -----------------------------------------------------------------------------
-# Test 13 (v1.2): _format_position_marker per a cada estat possible
+# Test 13 (v1.1): _format_position_marker per a cada estat possible
 # -----------------------------------------------------------------------------
-print("\nTest 13 — format del marcador de posició (v1.2)")
+print("\nTest 13 — format del marcador de posició (v1.1)")
 m = llm._format_position_marker({"step": 1, "prereq": None})
-check("marcador pas 1 conté 'Pas 1 de 3'", "Pas 1 de 3" in m)
-check("marcador pas 1 conté directiva 'advance'", "advance" in m)
-check("marcador pas 1 conté directiva 'stay'", "stay" in m)
-check("marcador pas 1 menciona pregunta del Pas",
-      "pregunta del Pas 1" in m)
-
+check("marcador pas 1", "[Posició actual: Pas 1 de 3]" == m,
+      f"got {m!r}")
 m = llm._format_position_marker({"step": 2, "prereq": None})
-check("marcador pas 2 conté 'Pas 2 de 3'", "Pas 2 de 3" in m)
-check("marcador pas 2 menciona pregunta del Pas 2",
-      "pregunta del Pas 2" in m)
-
+check("marcador pas 2", "[Posició actual: Pas 2 de 3]" == m)
 m = llm._format_position_marker({"step": 3, "prereq": None})
-check("marcador pas 3 conté 'Pas 3 de 3'", "Pas 3 de 3" in m)
+check("marcador pas 3", "[Posició actual: Pas 3 de 3]" == m)
 
 m = llm._format_position_marker({"step": 1, "prereq": "PRE-PARAM"})
-check("marcador reforç inclou 'Reforç PRE-PARAM activat'",
-      "Reforç PRE-PARAM activat" in m)
-check("marcador reforç inclou 'tornarà al Pas 1'",
-      "tornarà al Pas 1" in m)
-check("marcador reforç menciona pregunta del reforç",
-      "pregunta del reforç" in m)
+check("marcador reforç inclou 'PRE-PARAM activat'",
+      "PRE-PARAM activat" in m)
+check("marcador reforç inclou 'tornaràs al Pas 1'",
+      "tornaràs al Pas 1" in m)
 
 m = llm._format_position_marker({"step": 2, "prereq": "PRE-PARAM"})
-check("marcador reforç des de pas 2 té 'tornarà al Pas 2'",
-      "tornarà al Pas 2" in m)
+check("marcador reforç des de pas 2 té 'tornaràs al Pas 2'",
+      "tornaràs al Pas 2" in m)
 
 m = llm._format_position_marker({})
 check("posició buida → marcador buit", m == "")
@@ -355,11 +345,11 @@ check("hi ha 3 missatges user", len(user_indices) == 3)
 for idx in user_indices[:-1]:
     text = c[idx]["parts"][0]["text"]
     check(f"missatge user idx={idx} sense marcador",
-          "[Pas " not in text)
+          "[Posició actual:" not in text)
 # El darrer SÍ.
 last_text = c[user_indices[-1]]["parts"][0]["text"]
 check("darrer missatge user té marcador",
-      "[Pas 2 de 3" in last_text)
+      "[Posició actual:" in last_text)
 check("darrer missatge user conté el text original",
       "Tercera (darrera)" in last_text)
 
@@ -382,12 +372,10 @@ transcript_in_prereq = [
 llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-PARAM"},
                transcript_in_prereq)
 last_text = captured["contents"][-1]["parts"][0]["text"]
-check("marcador menciona Reforç PRE-PARAM activat",
-      "Reforç PRE-PARAM activat" in last_text)
-check("marcador menciona retorn al Pas 1",
+check("marcador menciona reforç PRE-PARAM",
+      "PRE-PARAM" in last_text)
+check("marcador menciona retorn a Pas 1",
       "Pas 1" in last_text)
-check("marcador inclou directiva advance/stay",
-      "advance" in last_text and "stay" in last_text)
 check("text original preservat", "Resposta" in last_text)
 
 
@@ -405,9 +393,100 @@ llm._call = capture_call_16
 llm.tutor_turn(PB.PROBLEM, {}, BASIC_TRANSCRIPT)
 last_text = captured["contents"][-1]["parts"][0]["text"]
 check("amb current_position buit, no s'afegeix marcador",
-      "[Pas " not in last_text and "[Reforç " not in last_text)
+      "[Posició actual:" not in last_text)
 check("text original preservat",
       "mitjana" in last_text)
+
+
+# -----------------------------------------------------------------------------
+# Test 17: invariant d'alternança — dos torns 'student' seguits → ValueError
+# -----------------------------------------------------------------------------
+# Aquest test cobreix exactament la classe de bug que el simulator tenia:
+# afegia el missatge de l'alumne a `state["transcript"]` a cada torn però
+# mai hi afegia la resposta del tutor. El transcript creixia com a
+# [tutor, student, student, student, ...] i `tutor_turn` el passava a
+# `_call` així mateix. El model perdia memòria del que havia dit i la
+# resposta visible es truncava sense arribar al separador `---CONTROL---`.
+# La validació nova fa fallar la crida explícitament en aquest cas.
+print("\nTest 17 — transcript amb 'student' consecutius → ValueError")
+
+raised_double_student = False
+err_msg = ""
+try:
+    llm.tutor_turn(PB.PROBLEM, {"step": 2, "prereq": None}, [
+        {"role": "tutor", "content": "Opening"},
+        {"role": "student", "content": "Resposta 1"},
+        {"role": "student", "content": "Resposta 2"},  # FALTA tutor entremig
+    ])
+except ValueError as e:
+    raised_double_student = True
+    err_msg = str(e)
+
+check("dos 'student' consecutius → ValueError",
+      raised_double_student)
+check("missatge d'error menciona els índexs problemàtics",
+      "1" in err_msg and "2" in err_msg,
+      f"got: {err_msg!r}")
+
+raised_double_tutor = False
+try:
+    llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": None}, [
+        {"role": "tutor", "content": "Opening"},
+        {"role": "tutor", "content": "Segona pregunta"},  # FALTA student entremig
+        {"role": "student", "content": "Resposta"},
+    ])
+except ValueError as e:
+    raised_double_tutor = True
+check("dos 'tutor' consecutius → ValueError", raised_double_tutor)
+
+
+# -----------------------------------------------------------------------------
+# Test 18: contracte explícit — len(contents) == len(transcript) i alternança
+# -----------------------------------------------------------------------------
+# Verificació explícita del que el comentari del bug fix demana: que `_call`
+# rebi tants items a `contents` com el transcript, i que alternin
+# model/user des del primer element (model) fins l'últim (user). Si això
+# es trenca, és perquè o bé `tutor_turn` està fusionant/saltant torns
+# (no hauria de passar), o bé el caller ha passat un transcript malformat
+# (que ara hauria d'aturar-se al Test 17 abans d'arribar aquí).
+print("\nTest 18 — contracte len(contents) i alternança a partir de l'índex 0")
+captured["contents"] = None
+def capture_call_18(system, contents):
+    captured["contents"] = contents
+    return ("R.\n---CONTROL---\n"
+            '{"action": "stay", "objectives_met": []}')
+llm._call = capture_call_18
+
+transcript_6 = [
+    {"role": "tutor",   "content": "T1"},
+    {"role": "student", "content": "S1"},
+    {"role": "tutor",   "content": "T2"},
+    {"role": "student", "content": "S2"},
+    {"role": "tutor",   "content": "T3"},
+    {"role": "student", "content": "S3"},
+]
+llm.tutor_turn(PB.PROBLEM, {"step": 3, "prereq": None}, transcript_6)
+c = captured["contents"]
+check("len(contents) == len(transcript)",
+      len(c) == len(transcript_6),
+      f"got len(contents)={len(c)}, len(transcript)={len(transcript_6)}")
+expected_roles = ["model", "user"] * (len(transcript_6) // 2)
+check("alternança model/user des de l'índex 0",
+      [t["role"] for t in c] == expected_roles,
+      f"got roles: {[t['role'] for t in c]}")
+# Comprovem que els textos s'han mapat per índex sense barrejar:
+for i, turn in enumerate(transcript_6):
+    expected_text = turn["content"]
+    actual_text = c[i]["parts"][0]["text"]
+    if i == len(transcript_6) - 1:
+        # L'últim user té marcador de posició prepended. Mirem només la cua.
+        check(f"contents[{i}] preserva text de transcript[{i}] (amb marcador)",
+              expected_text in actual_text,
+              f"got: {actual_text!r}")
+    else:
+        check(f"contents[{i}] == transcript[{i}] literal",
+              actual_text == expected_text,
+              f"got: {actual_text!r}")
 
 
 # -----------------------------------------------------------------------------

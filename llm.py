@@ -38,18 +38,25 @@ import problem as PB
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v1.2"
+PROMPT_VERSION = "v1.1"
 
 # Reintents per a errors transitoris de l'API.
 MAX_ATTEMPTS = 3
 RETRY_PATTERNS = ("503", "UNAVAILABLE", "RESOURCE_EXHAUSTED",
                   "DEADLINE_EXCEEDED")
 
-# Tokens màxims a la resposta del model. La resposta típica del tutor
+# Tokens màxims a la resposta del model. La resposta visible típica
 # té 100-300 tokens (text per a l'alumne) + ~30 tokens (control block).
-# 800 dóna marge per casos llargs (explicació canònica del reforç,
-# missatge final de tancament, transició entre passos amb metàfora).
-MAX_OUTPUT_TOKENS = 800
+#
+# Però Gemini 2.5 Flash inclou els tokens de raonament intern dins
+# d'aquest pressupost. Quan el model està confús (per exemple si rep
+# un transcript mal alternat) consumeix centenars de tokens pensant
+# abans de produir text visible, i la resposta s'acaba truncant a
+# meitat de paraula sense arribar al separador `---CONTROL---`. Això
+# es manifesta com `control_parse_ok=False` + reply truncada a la
+# meitat. 1500 dóna marge generós tant per al pensament com per al
+# text final i tanca aquesta classe de fallada.
+MAX_OUTPUT_TOKENS = 1500
 
 # Temperatura: la conversa pedagògica necessita una mica de
 # variabilitat per no sonar robotitzada. 0.4 és el mateix valor que
@@ -162,21 +169,14 @@ def _is_retriable(err: Exception) -> bool:
 
 def _format_position_marker(current_position: dict) -> str:
     """Construeix la línia de marcador de posició que s'antepondrà al
-    darrer missatge user. El system prompt v1.2 documenta aquest
+    darrer missatge user. El system prompt v1.1 documenta aquest
     format i instrueix el model a respectar-lo com a font de veritat
     sobre on és la sessió.
 
-    Format v1.2 (més directiu que v1.1 — afegit després de constatar
-    que el marcador "Posició actual: Pas N de 3" sense més no
-    impedia que el model interpretés el marker com "el pas al qual
-    vas" en comptes de "el pas en discussió"):
-
-      [Pas N de TOTAL. L'alumne respon a la teva pregunta del Pas N.
-       Jutja: tanca (advance) o continua (stay).]              — pas normal
-
-      [Reforç PRE-PARAM activat (tornarà al Pas N). L'alumne respon
-       a la pregunta del reforç. Jutja: tanca (advance) o continua
-       (stay).]                                                 — en reforç
+    Format:
+      [Posició actual: Pas N de TOTAL]                      — pas normal
+      [Posició actual: reforç PRE-PARAM activat (tornaràs al Pas N
+                       en acabar)]                          — en reforç
 
     Si no podem determinar la posició (current_position buit o sense
     camps reconeixibles), retornem cadena buida — el model continua
@@ -190,18 +190,13 @@ def _format_position_marker(current_position: dict) -> str:
 
     if prereq:
         if step is not None:
-            return (f"[Reforç {prereq} activat (tornarà al Pas {step}). "
-                    f"L'alumne respon a la pregunta del reforç. "
-                    f"Jutja: tanca (advance) o continua (stay).]")
-        return (f"[Reforç {prereq} activat. "
-                f"L'alumne respon a la pregunta del reforç. "
-                f"Jutja: tanca (advance) o continua (stay).]")
+            return (f"[Posició actual: reforç {prereq} activat "
+                    f"(tornaràs al Pas {step} en acabar)]")
+        return f"[Posició actual: reforç {prereq} activat]"
 
     if step is not None:
         total = len(PB.PROBLEM["passos"])
-        return (f"[Pas {step} de {total}. "
-                f"L'alumne respon a la teva pregunta del Pas {step}. "
-                f"Jutja: tanca (advance) o continua (stay).]")
+        return f"[Posició actual: Pas {step} de {total}]"
 
     return ""
 
@@ -345,6 +340,24 @@ def tutor_turn(problem: dict, current_position: dict,
             f"tutor_turn espera que el transcript acabi en torn 'student', "
             f"però acaba en '{transcript[-1]['role']}'."
         )
+    # El transcript ha d'alternar tutor/student sense repeticions
+    # consecutives. Gemini espera alternança user/model a `contents`;
+    # missatges consecutius del mateix rol fan que el model entri en
+    # un mode de pensament llarg intentant reconciliar l'estructura,
+    # consumint tokens del pressupost de sortida i truncant la resposta
+    # visible. Aquesta validació atrapa bugs del caller (p.ex. oblidar
+    # d'afegir la resposta del tutor al transcript entre torns) en
+    # comptes de deixar-los degradar silenciosament.
+    for i in range(1, len(transcript)):
+        if transcript[i]["role"] == transcript[i - 1]["role"]:
+            raise ValueError(
+                f"tutor_turn requereix un transcript que alterni "
+                f"tutor/student sense repeticions consecutives, però "
+                f"als índexs {i-1} i {i} hi ha dos torns "
+                f"'{transcript[i]['role']}' seguits. "
+                f"Possible causa: el caller no afegeix la resposta del "
+                f"tutor al transcript després de cada crida."
+            )
 
     system_instruction = _load_system_prompt()
 
