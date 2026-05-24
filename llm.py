@@ -38,7 +38,7 @@ import problem as PB
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v1.1"
 
 # Reintents per a errors transitoris de l'API.
 MAX_ATTEMPTS = 3
@@ -158,6 +158,40 @@ def _load_system_prompt() -> str:
 def _is_retriable(err: Exception) -> bool:
     msg = str(err).upper()
     return any(p in msg for p in RETRY_PATTERNS)
+
+
+def _format_position_marker(current_position: dict) -> str:
+    """Construeix la línia de marcador de posició que s'antepondrà al
+    darrer missatge user. El system prompt v1.1 documenta aquest
+    format i instrueix el model a respectar-lo com a font de veritat
+    sobre on és la sessió.
+
+    Format:
+      [Posició actual: Pas N de TOTAL]                      — pas normal
+      [Posició actual: reforç PRE-PARAM activat (tornaràs al Pas N
+                       en acabar)]                          — en reforç
+
+    Si no podem determinar la posició (current_position buit o sense
+    camps reconeixibles), retornem cadena buida — el model continua
+    sense marcador, igual que en v1.
+    """
+    if not current_position:
+        return ""
+
+    prereq = current_position.get("prereq")
+    step = current_position.get("step")
+
+    if prereq:
+        if step is not None:
+            return (f"[Posició actual: reforç {prereq} activat "
+                    f"(tornaràs al Pas {step} en acabar)]")
+        return f"[Posició actual: reforç {prereq} activat]"
+
+    if step is not None:
+        total = len(PB.PROBLEM["passos"])
+        return f"[Posició actual: Pas {step} de {total}]"
+
+    return ""
 
 
 def _call(system_instruction: str, contents: list) -> str:
@@ -307,12 +341,25 @@ def tutor_turn(problem: dict, current_position: dict,
     # el contingut net, sense control block — el control és metadades
     # del sistema, no part de la conversa que el model va veure). Els
     # torns "student" són role="user".
+    #
+    # A v1.1 (Proposta de Pas 3a-bis), prependim un marcador de posició
+    # al DARRER missatge user. El marcador li diu al model en quin pas
+    # estem ara mateix i actua com a font de veritat — sense això, el
+    # model perd la pista de l'estructura del currículum a mesura que
+    # la conversa avança (bug observat a les sessions Alumne 1, 2 amb
+    # el prompt v1).
+    position_marker = _format_position_marker(current_position)
+    last_user_idx = len(transcript) - 1  # garantit > 0 per invariants
+
     contents = []
-    for turn in transcript:
+    for i, turn in enumerate(transcript):
         role = "model" if turn["role"] == "tutor" else "user"
+        text = turn["content"]
+        if i == last_user_idx and role == "user" and position_marker:
+            text = f"{position_marker}\n\n{text}"
         contents.append({
             "role": role,
-            "parts": [{"text": turn["content"]}],
+            "parts": [{"text": text}],
         })
 
     raw_output = _call(system_instruction, contents)

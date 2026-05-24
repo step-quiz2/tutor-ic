@@ -213,15 +213,21 @@ transcript_4 = [
     {"role": "tutor", "content": "Reformulació"},
     {"role": "student", "content": "Resposta 2"},
 ]
-llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": None}, transcript_4)
+llm.tutor_turn(PB.PROBLEM, {"step": 2, "prereq": None}, transcript_4)
 c = captured["contents"]
 check("contents té 4 items", len(c) == 4, f"got {len(c)}")
 check("ordre rol: model, user, model, user",
       [t["role"] for t in c] == ["model", "user", "model", "user"])
-check("primer text correcte",
+check("primer text correcte (sense marcador)",
       c[0]["parts"][0]["text"] == "Welcome")
-check("últim text correcte",
-      c[3]["parts"][0]["text"] == "Resposta 2")
+check("primer torn user NO té marcador",
+      "[Posició actual:" not in c[1]["parts"][0]["text"])
+check("últim missatge user conté el text de l'alumne",
+      "Resposta 2" in c[3]["parts"][0]["text"])
+check("últim missatge user té el marcador de posició (v1.1)",
+      "[Posició actual:" in c[3]["parts"][0]["text"])
+check("marcador inclou 'Pas 2 de 3'",
+      "Pas 2 de 3" in c[3]["parts"][0]["text"])
 check("system_instruction passat", captured["system"] is not None)
 
 
@@ -281,6 +287,115 @@ for i, (raw, expected_action) in enumerate(samples):
           '"action"' not in result["reply"] and "---CONTROL---" not in result["reply"])
     check(f"sample {i+1}: action correcta",
           result["action"] == expected_action)
+
+
+# -----------------------------------------------------------------------------
+# Test 13 (v1.1): _format_position_marker per a cada estat possible
+# -----------------------------------------------------------------------------
+print("\nTest 13 — format del marcador de posició (v1.1)")
+m = llm._format_position_marker({"step": 1, "prereq": None})
+check("marcador pas 1", "[Posició actual: Pas 1 de 3]" == m,
+      f"got {m!r}")
+m = llm._format_position_marker({"step": 2, "prereq": None})
+check("marcador pas 2", "[Posició actual: Pas 2 de 3]" == m)
+m = llm._format_position_marker({"step": 3, "prereq": None})
+check("marcador pas 3", "[Posició actual: Pas 3 de 3]" == m)
+
+m = llm._format_position_marker({"step": 1, "prereq": "PRE-PARAM"})
+check("marcador reforç inclou 'PRE-PARAM activat'",
+      "PRE-PARAM activat" in m)
+check("marcador reforç inclou 'tornaràs al Pas 1'",
+      "tornaràs al Pas 1" in m)
+
+m = llm._format_position_marker({"step": 2, "prereq": "PRE-PARAM"})
+check("marcador reforç des de pas 2 té 'tornaràs al Pas 2'",
+      "tornaràs al Pas 2" in m)
+
+m = llm._format_position_marker({})
+check("posició buida → marcador buit", m == "")
+
+m = llm._format_position_marker({"step": None, "prereq": None})
+check("posició None/None → marcador buit", m == "")
+
+
+# -----------------------------------------------------------------------------
+# Test 14 (v1.1): el marcador NO apareix en torns user anteriors al darrer
+# -----------------------------------------------------------------------------
+print("\nTest 14 — marcador només al darrer torn user")
+captured["contents"] = None
+def capture_call_14(system, contents):
+    captured["contents"] = contents
+    return ("Resposta.\n---CONTROL---\n"
+            '{"action": "stay", "objectives_met": []}')
+llm._call = capture_call_14
+
+transcript_long = [
+    {"role": "tutor", "content": "Opening"},
+    {"role": "student", "content": "Primera"},
+    {"role": "tutor", "content": "Reply 1"},
+    {"role": "student", "content": "Segona"},
+    {"role": "tutor", "content": "Reply 2"},
+    {"role": "student", "content": "Tercera (darrera)"},
+]
+llm.tutor_turn(PB.PROBLEM, {"step": 2, "prereq": None}, transcript_long)
+c = captured["contents"]
+user_indices = [i for i, t in enumerate(c) if t["role"] == "user"]
+check("hi ha 3 missatges user", len(user_indices) == 3)
+# Els primers 2 missatges user NO han de tenir el marcador.
+for idx in user_indices[:-1]:
+    text = c[idx]["parts"][0]["text"]
+    check(f"missatge user idx={idx} sense marcador",
+          "[Posició actual:" not in text)
+# El darrer SÍ.
+last_text = c[user_indices[-1]]["parts"][0]["text"]
+check("darrer missatge user té marcador",
+      "[Posició actual:" in last_text)
+check("darrer missatge user conté el text original",
+      "Tercera (darrera)" in last_text)
+
+
+# -----------------------------------------------------------------------------
+# Test 15 (v1.1): marcador en mode reforç
+# -----------------------------------------------------------------------------
+print("\nTest 15 — marcador quan active_prereq està actiu")
+captured["contents"] = None
+def capture_call_15(system, contents):
+    captured["contents"] = contents
+    return ("Resposta.\n---CONTROL---\n"
+            '{"action": "stay", "objectives_met": []}')
+llm._call = capture_call_15
+
+transcript_in_prereq = [
+    {"role": "tutor", "content": "Opening"},
+    {"role": "student", "content": "Resposta"},
+]
+llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-PARAM"},
+               transcript_in_prereq)
+last_text = captured["contents"][-1]["parts"][0]["text"]
+check("marcador menciona reforç PRE-PARAM",
+      "PRE-PARAM" in last_text)
+check("marcador menciona retorn a Pas 1",
+      "Pas 1" in last_text)
+check("text original preservat", "Resposta" in last_text)
+
+
+# -----------------------------------------------------------------------------
+# Test 16 (v1.1): backward compat — si position_marker és buit, no s'afegeix res
+# -----------------------------------------------------------------------------
+print("\nTest 16 — sense marcador no es modifica el text user")
+captured["contents"] = None
+def capture_call_16(system, contents):
+    captured["contents"] = contents
+    return ("R.\n---CONTROL---\n"
+            '{"action": "stay", "objectives_met": []}')
+llm._call = capture_call_16
+
+llm.tutor_turn(PB.PROBLEM, {}, BASIC_TRANSCRIPT)
+last_text = captured["contents"][-1]["parts"][0]["text"]
+check("amb current_position buit, no s'afegeix marcador",
+      "[Posició actual:" not in last_text)
+check("text original preservat",
+      "mitjana" in last_text)
 
 
 # -----------------------------------------------------------------------------
