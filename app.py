@@ -1,933 +1,571 @@
+git add . && git commit -m "versió" && git push && python -m streamlit run app.py"""
+app.py — Streamlit UI per al tutor IC (arquitectura Nivell 1).
+
+Substitueix la versió anterior basada en classificadors. La lògica
+d'estat (nova sessió, apply_action, compute_quality_signals) ve
+directament de `simulator.py` — sense duplicació de codi.
+
+UI:
+  - Capçalera fixa amb l'enunciat (sempre visible).
+  - Una sola targeta del tutor a la vista, colorada per acció:
+      verd     = advance net (sense stays previs al mateix pas)
+      groc     = advance amb stays previs o retreat al reforç
+      gris     = stay (error conceptual, tutoria en curs)
+      bordeus  = sospita que l'alumne està vacil·lant (heurística)
+  - Botons 💡 Pista i 🚪 Acabar.
+  - Font base +20%.
+  - Resum visual final amb mètriques i distribució per pas.
+
+Comporta amb la mateixa rigidesa que el simulador: el reply del tutor
+s'afegeix al transcript després de cada crida (bug del simulator
+original).
 """
-Tutor IC — UI Streamlit.
 
-Per executar:
-    export GEMINI_API_KEY=...
-    streamlit run app.py
-
-Senyals especials que l'alumne pot teclejar:
-    ?        → demana pista socràtica
-    !text    → registra discrepància («tinc raó perquè...») i avança
-    !!       → tanca la sessió
-
-Estat top-level de st.session_state (NO es reseteja amb "Reiniciar sessió"):
-    disclaimer_acknowledged : bool. L'usuari ha acceptat l'avís d'ús.
-    api_calls_used          : int. Comptador de crides a la IA durant
-                              tota la sessió de navegador. Persistent
-                              entre reinicis per evitar que un alumne
-                              reinicii per recuperar quota.
-
-Estat per problema (st.session_state.tutor): es reseteja amb "Reiniciar".
-"""
-
-import json
+import re
 import time
+
 import streamlit as st
 
 import problem as PB
 import llm as L
+import simulator as S
 
-st.set_page_config(page_title="Tutor IC", page_icon="📊", layout="centered")
+
+# =============================================================================
+# Configuració
+# =============================================================================
+
+st.set_page_config(
+    page_title="Tutor d'intervals de confiança",
+    page_icon="🎓",
+    layout="centered",
+)
+
+# Patrons mofa per a la detecció de "vacil·lar". Llista deliberadament
+# curta — falsos positius són pitjors que falsos negatius en aquesta
+# senyal (un bordeus injustificat amaga el color real).
+MOCKERY_PATTERNS = (
+    "haha", "jaja", "jeje", "jiji",
+    "lol", "xd",
+    "patata", "tontain", "tontus",
+    "ke pasa", "wtf",
+)
+
+# Marca literal que l'app injecta quan l'alumne demana pista.
+# Ha de coincidir amb el que espera el system prompt.
+HINT_MARKER = "(L'alumne demana una pista)"
 
 
-# ============================================================
-# Constants
-# ============================================================
-MIN_ANSWER_CHARS = 10
+# =============================================================================
+# CSS
+# =============================================================================
 
-# Sostre de crides a la IA per sessió de navegador. Una sessió típica
-# raonable consumeix entre 4 i 12 crides (3 passos × 1-2 crides + alguna
-# pista). 20 dona prou marge per a retrocés a prereq + un parell de
-# pistes, però talla l'abús d'un input spamejat.
-MAX_API_CALLS_PER_SESSION = 20
+CSS = """
+<style>
+/* Font +20% al contingut principal */
+.main .block-container {
+    font-size: 1.2rem;
+    padding-top: 2rem;
+    max-width: 780px;
+}
+.stMarkdown p, .stMarkdown li { font-size: 1.2rem; line-height: 1.6; }
+h1 { font-size: 1.8rem !important; margin-bottom: 1.5rem !important; }
 
-DISCLAIMER_TEXT = """
-**Atenció, aquest programa està en mode DEBUG / desenvolupament.**
+/* Capçalera persistent amb l'enunciat */
+.problem-card {
+    background: #f0f4f8;
+    border-left: 4px solid #1565c0;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.75rem;
+    border-radius: 6px;
+}
+.problem-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1565c0;
+    margin-bottom: 0.35rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.problem-text { font-size: 1.05rem; line-height: 1.55; color: #1a2733; }
 
-Recorda: **no pots escriure cap dada personal, familiar o financera.**
-No escriguis el teu nom, el teu PIN, adreces, telèfons, números de
-compte, ni cap altra dada identificativa de tu mateix o de tercers.
+/* Targeta del tutor */
+.tutor-card {
+    padding: 1.5rem 1.5rem 1.25rem 1.5rem;
+    border-radius: 12px;
+    margin: 1.5rem 0;
+    border-left: 5px solid;
+    line-height: 1.6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.tutor-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.8rem;
+    opacity: 0.75;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.tutor-body { font-size: 1.15rem; }
+.tutor-body p { margin: 0.6em 0; }
+.tutor-body p:first-child { margin-top: 0; }
+.tutor-body p:last-child { margin-bottom: 0; }
+.tutor-body blockquote {
+    border-left: 3px solid rgba(0,0,0,0.18);
+    padding: 0.3rem 0 0.3rem 0.8rem;
+    margin: 0.7em 0;
+    font-style: italic;
+    opacity: 0.88;
+}
+.tutor-body code {
+    background: rgba(0,0,0,0.06);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-size: 0.95em;
+}
+.step-badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    background: rgba(0,0,0,0.07);
+    color: rgba(0,0,0,0.65);
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-left: auto;
+}
 
-Respon **exclusivament** amb raonaments de matemàtiques o d'estadística.
+/* Colors semàntics */
+.tutor-green    { background: #e8f5e9; border-color: #2e7d32; }
+.tutor-yellow   { background: #fff8e1; border-color: #ef6c00; }
+.tutor-gray     { background: #f5f5f5; border-color: #757575; }
+.tutor-bordeaux { background: #fbe9e7; border-color: #8b0000; }
+.tutor-neutral  { background: #e3f2fd; border-color: #1976d2; }
+.tutor-thinking {
+    background: #fafafa;
+    border-color: #bdbdbd;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.stButton button { border-radius: 8px; font-weight: 500; }
+
+/* Resum final */
+.summary-header {
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    margin-bottom: 2rem;
+    border-radius: 14px;
+}
+.summary-header h1 { margin: 0 0 0.5rem 0 !important; font-size: 2rem !important; }
+.summary-header p { margin: 0; opacity: 0.85; font-size: 1.1rem; }
+.summary-success { background: #e8f5e9; border: 2px solid #2e7d32; color: #1b5e20; }
+.summary-neutral { background: #f5f5f5; border: 2px solid #9e9e9e; color: #424242; }
+</style>
 """
 
 
-# ============================================================
-# Estat tutorial (per problema)
-# ============================================================
-def _new_state():
-    return {
-        "started_at": time.time(),
-        "current_step_idx": 0,
-        "history": [],
-        "messages": [],
-        "active_prereq": None,
-        "prereq_attempts": 0,
-        # Tracking de pistes per al generador dirigit (Proposta 3).
-        # `hints_by_step` és un dict {step_id (int) -> list[str]} que
-        # acumula les pistes donades a cada pas, perquè el generador
-        # eviti repetir-les. `prereq_hints` és la llista anàloga però
-        # del reforç actiu (es buida quan el reforç es tanca).
-        "hints_by_step": {},
-        "prereq_hints": [],
-        "concept_failure_streak": 0,
-        "discrepancies": [],
-        "hints_requested": 0,
-        "finished": None,
-        "awaiting_next": False,
-    }
+# =============================================================================
+# Helpers: markdown → HTML
+# =============================================================================
 
-
-def _push(kind: str, text: str, persistent: bool = False):
-    st.session_state.tutor["messages"].append({
-        "kind": kind, "text": text, "persistent": persistent,
-    })
-
-
-# ============================================================
-# Gestió de quota d'API
-# ============================================================
-def _api_quota_exhausted() -> bool:
-    return st.session_state.get("api_calls_used", 0) >= MAX_API_CALLS_PER_SESSION
-
-
-def _consume_api_quota():
-    """Incrementa el comptador. Cridar JUST ABANS de cada crida a llm."""
-    st.session_state.api_calls_used = (
-        st.session_state.get("api_calls_used", 0) + 1
+def simple_md_to_html(text):
+    """Conversió minimalista markdown → HTML, suficient per als replies
+    típics del tutor (negretes, cursives, codi inline, quotes,
+    paràgrafs). Conscientment no usa cap dependència externa."""
+    if not text:
+        return ""
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = re.sub(
+        r"^&gt;\s?(.+)$",
+        r"<blockquote>\1</blockquote>",
+        text,
+        flags=re.MULTILINE,
     )
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<em>\1</em>", text)
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
-
-def _push_quota_exhausted_warning():
-    _push("warning",
-          f"⚠️ Has arribat al límit de {MAX_API_CALLS_PER_SESSION} "
-          "crides d'aquesta sessió. Per continuar, tanca i torna a "
-          "obrir l'aplicació al navegador.")
-
-
-# ============================================================
-# Lògica nuclear del torn
-# ============================================================
-def _process_prereq_turn(answer: str):
-    """Validació del prereq via LLM judge (proposta 2 del registre de
-    canvis). Substitueix el matching determinista per keyword, que tenia
-    exactament el patró de fallada KEY_only documentat al Phase 2 del
-    PROJECT_LOG.
-
-    Política de reintents:
-      - "correct"     → tanquem el reforç i tornem al problema.
-      - "keyword_only" en el PRIMER intent → micropista i nou intent
-                       sobre la mateixa pregunta (no avancem).
-      - "keyword_only" en el SEGON intent → explicació canònica i
-                       tornem al problema.
-      - "incorrect"   → explicació canònica i tornem al problema.
-                       (Sense reintent: si la resposta està molt
-                       desviada, un segon intent rarament ajuda;
-                       l'alumne pot seguir endavant amb la
-                       infraestructura `!text` si pensa que té raó.)
-    """
-    state = st.session_state.tutor
-    pre = PB.PREREQUISITES[state["active_prereq"]]
-
-    # Fast-reject deterministic: si la resposta conté una afirmació
-    # explícitament prohibida ("μ és aleatòria"), no cal cridar la
-    # IA — és incorrect per construcció.
-    low = answer.lower()
-    has_forb = any(kw.lower() in low for kw in pre["forbidden_keywords"])
-
-    if has_forb:
-        result = {
-            "verdict": "incorrect",
-            "reason": ("Has afirmat el contrari del que volem clarificar: "
-                       "que μ és aleatòria. Repassa-ho amb cura."),
-            "n_api_calls": 0,
-        }
-        api_consumed = False
-    else:
-        # Crida real al judge LLM.
-        if _api_quota_exhausted():
-            _push_quota_exhausted_warning()
-            return
-        # Self-consistency selectiva (Proposta 5): permetem resample
-        # només si tenim quota per a 2 crides.
-        remaining = MAX_API_CALLS_PER_SESSION - st.session_state.get("api_calls_used", 0)
-        allow_resample = (remaining >= 2)
-        _consume_api_quota()
-        api_consumed = True
-        try:
-            with st.spinner("Avaluant resposta del reforç..."):
-                result = L.judge_prereq(pre, answer, allow_resample=allow_resample)
-        except Exception:
-            _push("warning",
-                  "⚠️ El servei d'avaluació no respon ara mateix. "
-                  "Torna a enviar la mateixa resposta d'aquí uns segons.")
-            return
-        # Comptem extra crides de re-mostreig.
-        extra_calls = max(0, result.get("n_api_calls", 1) - 1)
-        for _ in range(extra_calls):
-            _consume_api_quota()
-
-    v = result["verdict"]
-    reason = result.get("reason", "")
-    state["prereq_attempts"] += 1
-    attempt = state["prereq_attempts"]
-
-    state["history"].append({
-        "type": "prereq",
-        "prereq_id": state["active_prereq"],
-        "student": answer,
-        "verdict": v,
-        "reason": reason,
-        "attempt": attempt,
-        "api_call": api_consumed,
-        # Metadades de self-consistency (Proposta 5).
-        "confidence": result.get("confidence"),
-        "resampled": result.get("resampled", False),
-        "initial_verdict": result.get("initial_verdict"),
-        "agreement": result.get("agreement"),
-        "resample_failed": result.get("resample_failed", False),
-        "n_api_calls": result.get("n_api_calls", 0 if not api_consumed else 1),
-        "ts": time.time(),
-    })
-
-    if v == "correct":
-        praise = (reason + "\n\n") if reason else ""
-        _push("prereq_done",
-              f"✓ Molt bé. {praise}Tornem ara al problema principal, "
-              "prova de respondre el pas anterior tenint això al cap.",
-              persistent=True)
-        state["active_prereq"] = None
-        state["prereq_attempts"] = 0
-        state["prereq_hints"] = []
-        return
-
-    if v == "keyword_only" and attempt == 1:
-        # Segon intent: la micropista ara la genera la IA dirigida a la
-        # resposta concreta de l'alumne (Proposta 3). Si la quota està
-        # plena o la IA falla, fallback a la micropista estàtica que
-        # vam introduir al Canvi 2.
-        state["prereq_hints"] = []  # comença el tracking del reforç
-        hint_text = None
-        if not _api_quota_exhausted():
-            _consume_api_quota()
-            try:
-                with st.spinner("Generant micropista..."):
-                    hint_text = L.generate_prereq_hint(
-                        pre,
-                        student_answer=answer,
-                        judge_reason=reason,
-                        prior_hints=[],
-                    )
-            except Exception:
-                hint_text = None
-
-        if hint_text:
-            state["prereq_hints"].append(hint_text)
-            state["history"].append({
-                "type": "hint",
-                "scope": "prereq",
-                "prereq_id": state["active_prereq"],
-                "text": hint_text,
-                "had_student_context": True,
-                "n_prior_hints": 0,
-                "auto": True,  # generada automàticament al keyword_only-1
-                "ts": time.time(),
-            })
-            _push("prereq_feedback", f"💡 {hint_text}")
-        else:
-            # Fallback: micropista estàtica.
-            _push("prereq_feedback",
-                  "La teva resposta toca el tema però falta concretar. "
-                  "Assegura't que diguis explícitament **què és μ** i "
-                  "**què és x̄**, i **quina de les dues és aleatòria**.")
-        # No tanquem active_prereq: l'alumne respon de nou.
-        return
-
-    # Cas final: keyword_only al segon intent, o incorrect → tanquem
-    # amb explicació canònica i retornem al problema.
-    intro = (reason + "\n\n") if (reason and v == "incorrect") else ""
-    _push("prereq_done",
-          f"{intro}{pre['explanation']}\n\nTornem ara al problema "
-          "principal amb aquesta idea clara.",
-          persistent=True)
-    state["active_prereq"] = None
-    state["prereq_attempts"] = 0
-    state["prereq_hints"] = []
-
-
-def _activate_prereq():
-    state = st.session_state.tutor
-    pre_id = PB.DEPENDENCIES["param_vs_stat"]["prerequisite"]
-    state["active_prereq"] = pre_id
-    # Reset defensiu: si quedés residual d'una activació prèvia
-    # (no hauria de passar, però defensiu millor que recuperar bugs).
-    state["prereq_attempts"] = 0
-    state["prereq_hints"] = []
-    _push("prereq",
-          "🔁 **Sembla que cal aclarir un concepte previ.** "
-          "Pots veure la pregunta de reforç a la part superior; "
-          "respon-la a continuació.")
-
-
-def _maybe_finish():
-    state = st.session_state.tutor
-    if state["current_step_idx"] >= len(PB.PROBLEM["passos"]):
-        state["finished"] = "solved"
-        _push("system",
-              "🎉 **Has completat el problema!** "
-              "Has interpretat correctament l'interval de confiança "
-              "evitant l'error clàssic. Bona feina.")
-
-
-def _build_judge_context(step_id: int) -> dict:
-    """Construeix el context de trajectòria que es passa a `judge_step`
-    (Proposta 1).
-
-    Compacte i agregat — no traslladem text íntegre de respostes
-    anteriors al judge perquè faria créixer molt els tokens d'input
-    per crida; passem només els indicadors que les regles P3a/P3b/P3c
-    del system prompt necessiten per decidir.
-
-    Camps:
-      recent_steps          fins als 3 torns 'step' més recents, més
-                            nou primer, amb step_id, verdict i
-                            error_label.
-      prereq                {activated, final_verdict, attempts} del
-                            darrer cicle del reforç. "final_verdict"
-                            és l'últim verdict registrat (sigui correct,
-                            keyword_only o incorrect). Si el cicle es
-                            va tancar amb explicació canònica després
-                            d'un keyword_only-2 o incorrect, el camp
-                            reflecteix l'últim verdict abans del
-                            tancament — això vol dir "no l'ha
-                            demostrat", que és el que el judge
-                            necessita saber.
-      step_attempts         intents previs al MATEIX step_id (sense
-                            comptar el torn que estem a punt de
-                            jutjar).
-      concept_failure_streak  comptador de conceptual_gap consecutius
-                              actual (mateix camp d'estat).
-    """
-    state = st.session_state.tutor
-
-    # Últims 3 torns step en ordre invers (més recents primer).
-    recent_steps = []
-    for h in reversed(state["history"]):
-        if h.get("type") != "step":
+    paragraphs = text.split("\n\n")
+    html_parts = []
+    for p in paragraphs:
+        p = p.strip()
+        if not p:
             continue
-        recent_steps.append({
-            "step_id": h.get("step_id"),
-            "verdict": h.get("verdict"),
-            "error_label": h.get("error_label"),
-        })
-        if len(recent_steps) >= 3:
+        p = p.replace("\n", "<br>")
+        if p.startswith("<blockquote>"):
+            html_parts.append(p)
+        else:
+            html_parts.append(f"<p>{p}</p>")
+    return "\n".join(html_parts)
+
+
+# =============================================================================
+# Helpers: color i posició
+# =============================================================================
+
+def is_disengaged(state):
+    """Heurística per detectar que l'alumne sembla vacil·lant.
+
+    Triggers:
+      - Últim missatge conté algun patró de mofa (haha, patata, etc.)
+      - 2 dels últims 3 missatges (no comptant pista) tenen <8 caràcters
+
+    Falsos positius: alumnes que escriuen molt curt per estil. Acceptable
+    perquè el bordeus només AFEGEIX informació al professor; no canvia
+    el comportament del tutor."""
+    history = state.get("history", [])
+    if not history:
+        return False
+
+    latest_msg = (history[-1].get("student_msg") or "").lower().strip()
+    if not latest_msg or latest_msg == HINT_MARKER.lower():
+        return False
+
+    if any(p in latest_msg for p in MOCKERY_PATTERNS):
+        return True
+
+    if len(history) >= 3:
+        recent_msgs = [
+            (h.get("student_msg") or "")
+            for h in history[-3:]
+            if h.get("student_msg") != HINT_MARKER
+        ]
+        very_short = sum(1 for m in recent_msgs if len(m.strip()) < 8)
+        if very_short >= 2:
+            return True
+
+    return False
+
+
+def count_consecutive_stays_in_same_position(history, last_idx):
+    """Compta quants 'stay' consecutius hi va haver immediatament abans
+    de history[last_idx], a la mateixa posició (step, prereq) que
+    history[last_idx]['position_before']. Aïllat per facilitar test."""
+    if last_idx < 1:
+        return 0
+    target_pos = history[last_idx]["position_before"]
+    count = 0
+    for prev in reversed(history[:last_idx]):
+        if prev["action"] != "stay":
             break
-
-    # Estat del reforç: ens interessa el darrer cicle.
-    prereq_entries = [h for h in state["history"] if h.get("type") == "prereq"]
-    if prereq_entries:
-        # El darrer cicle acaba a l'últim entry; recorrem cap enrere
-        # mentre l'attempt vagi decreixent (signal de mateix cicle).
-        last = prereq_entries[-1]
-        attempts_in_cycle = 1
-        prev_attempt = last.get("attempt", 1)
-        for entry in reversed(prereq_entries[:-1]):
-            a = entry.get("attempt")
-            if a is not None and a < prev_attempt:
-                attempts_in_cycle += 1
-                prev_attempt = a
-            else:
-                break
-        prereq_info = {
-            "activated": True,
-            "final_verdict": last.get("verdict"),
-            "attempts": attempts_in_cycle,
-        }
-    else:
-        prereq_info = {
-            "activated": False,
-            "final_verdict": None,
-            "attempts": 0,
-        }
-
-    # Intents previs al pas que estem a punt de jutjar (NO inclou la
-    # resposta que estem a punt de classificar — encara no està a
-    # history).
-    step_attempts = sum(
-        1 for h in state["history"]
-        if h.get("type") == "step" and h.get("step_id") == step_id
-    )
-
-    return {
-        "recent_steps": recent_steps,
-        "prereq": prereq_info,
-        "step_attempts": step_attempts,
-        "concept_failure_streak": state.get("concept_failure_streak", 0),
-    }
+        if prev["position_before"] != target_pos:
+            break
+        count += 1
+    return count
 
 
+def determine_turn_color(state):
+    """Retorna la classe CSS de color per a la targeta del tutor del
+    torn actual."""
+    history = state.get("history", [])
+    if not history:
+        return "neutral"
 
-def _last_non_correct_answer_for_step(step_id: int):
-    """Retorna (student_answer, reason, error_label) de l'últim torn
-    no-correct al pas indicat. Si no n'hi ha, retorna tres None.
-    Helper de _try_generate_hint (Proposta 3)."""
-    state = st.session_state.tutor
-    for h in reversed(state["history"]):
-        if h.get("type") != "step":
-            continue
-        if h.get("step_id") != step_id:
-            continue
-        if h.get("verdict") == "correct":
-            continue
-        return (h.get("student"), h.get("reason"), h.get("error_label"))
-    return (None, None, None)
+    if is_disengaged(state):
+        return "bordeaux"
 
+    latest = history[-1]
+    action = latest["action"]
 
-def _last_non_correct_prereq_answer(prereq_id: str):
-    """Anàleg per al reforç. Retorna (student_answer, reason)."""
-    state = st.session_state.tutor
-    for h in reversed(state["history"]):
-        if h.get("type") != "prereq":
-            continue
-        if h.get("prereq_id") != prereq_id:
-            continue
-        if h.get("verdict") == "correct":
-            continue
-        return (h.get("student"), h.get("reason"))
-    return (None, None)
-
-
-def _try_generate_hint(step) -> bool:
-    """Genera una pista DIRIGIDA respectant la quota.
-
-    Canvis respecte de la versió original (Proposta 3): la pista ja no
-    és genèrica per al pas — el generador rep la darrera resposta no-
-    correct de l'alumne a aquest pas, la raó del judge, l'etiqueta
-    d'error i les pistes anteriors per al mateix pas. Quan no hi ha
-    cap d'aquests contexts (`?` al principi del pas), genera una pista
-    genèrica però el prompt sap diferenciar el cas.
-
-    Retorna True si s'ha generat alguna pista, False si la quota era
-    plena o hi ha hagut error tècnic.
-    """
-    if _api_quota_exhausted():
-        _push_quota_exhausted_warning()
-        return False
-
-    state = st.session_state.tutor
-    step_id = step["id"]
-    last_answer, last_reason, last_label = _last_non_correct_answer_for_step(step_id)
-    prior_hints = list(state["hints_by_step"].get(step_id, []))
-
-    _consume_api_quota()
-    try:
-        with st.spinner("Generant pista..."):
-            hint = L.generate_hint(
-                step, "param_vs_stat",
-                student_answer=last_answer,
-                judge_reason=last_reason,
-                error_label=last_label,
-                prior_hints=prior_hints,
-            )
-        _push("hint", f"💡 {hint}")
-        # Tracking: guardem la pista per al pas i a l'historial.
-        state["hints_by_step"].setdefault(step_id, []).append(hint)
-        state["history"].append({
-            "type": "hint",
-            "scope": "step",
-            "step_id": step_id,
-            "text": hint,
-            "had_student_context": last_answer is not None,
-            "n_prior_hints": len(prior_hints),
-            "ts": time.time(),
-        })
-        return True
-    except Exception:
-        _push("warning",
-              "⚠️ No s'ha pogut generar la pista (servei IA no disponible). "
-              "Pots tornar-ho a provar.")
-        return False
-
-
-def _try_generate_prereq_hint() -> bool:
-    """Genera una pista DIRIGIDA per al reforç actiu (Proposta 3).
-
-    Substitueix l'antic comportament del `?` durant el reforç, que era
-    dispar l'explicació canònica completa. Ara, si hi ha quota, fem
-    una crida al generador socràtic adaptat al reforç.
-
-    Retorna True si s'ha generat alguna pista; False si la quota era
-    plena o hi ha hagut error tècnic. En cas de fallada amb quota
-    disponible, l'invocador pot decidir si fer fallback a l'explicació
-    canònica.
-    """
-    state = st.session_state.tutor
-    pre_id = state["active_prereq"]
-    if pre_id is None:
-        return False
-    pre = PB.PREREQUISITES[pre_id]
-
-    if _api_quota_exhausted():
-        _push_quota_exhausted_warning()
-        return False
-
-    last_answer, last_reason = _last_non_correct_prereq_answer(pre_id)
-    prior_hints = list(state["prereq_hints"])
-
-    _consume_api_quota()
-    try:
-        with st.spinner("Generant pista del reforç..."):
-            hint = L.generate_prereq_hint(
-                pre,
-                student_answer=last_answer,
-                judge_reason=last_reason,
-                prior_hints=prior_hints,
-            )
-        _push("hint", f"💡 {hint}")
-        state["prereq_hints"].append(hint)
-        state["history"].append({
-            "type": "hint",
-            "scope": "prereq",
-            "prereq_id": pre_id,
-            "text": hint,
-            "had_student_context": last_answer is not None,
-            "n_prior_hints": len(prior_hints),
-            "ts": time.time(),
-        })
-        return True
-    except Exception:
-        _push("warning",
-              "⚠️ No s'ha pogut generar la pista del reforç. "
-              "Pots tornar-ho a provar.")
-        return False
-
-
-def process_turn(raw: str):
-    state = st.session_state.tutor
-    state["messages"] = [m for m in state["messages"] if m["persistent"]]
-
-    s = (raw or "").strip()
-    if not s:
-        return
-
-    # --- Senyals d'escapament: cap crida API ---
-    if s in ("!!", ":q", "exit"):
-        state["finished"] = "abandoned"
-        _push("system", "Sessió tancada. Rastre desat.")
-        return
-
-    if s == "?":
-        # Dins de prereq, abans empenyíem l'explicació canònica completa
-        # — això revelava la distinció demanada i invalidava la idea
-        # socràtica del reintent. Ara generem una pista adaptada
-        # (Proposta 3). Si la quota està plena, fallback a l'explicació
-        # canònica (no cal IA per a aquest text).
-        if state["active_prereq"] is not None:
-            if _api_quota_exhausted():
-                # Fallback gratuït: l'explicació canònica.
-                pre = PB.PREREQUISITES[state["active_prereq"]]
-                _push("hint", pre["explanation"])
-                state["hints_requested"] += 1
-            elif _try_generate_prereq_hint():
-                state["hints_requested"] += 1
-        else:
-            step = PB.PROBLEM["passos"][state["current_step_idx"]]
-            if _try_generate_hint(step):
-                state["hints_requested"] += 1
-        return
-
-    if s.startswith("!") and len(s) > 1:
-        # Discrepància: cap crida API.
-        payload = s[1:].strip()
-        state["discrepancies"].append({
-            "step": state["current_step_idx"] + 1,
-            "text": payload,
-            "ts": time.time(),
-        })
-        state["history"].append({
-            "type": "discrepancy",
-            "step_id": state["current_step_idx"] + 1,
-            "text": payload,
-            "ts": time.time(),
-        })
-        _push("discrepancy",
-              "D'acord, queda anotat per revisió del professor. Continuem.")
-        state["current_step_idx"] += 1
-        _maybe_finish()
-        return
-
-    # --- Sessió de prerequisit activa: validació deterministica ---
-    if state["active_prereq"] is not None:
-        _process_prereq_turn(s)
-        return
-
-    # --- Guard contra entrades no substantives (sense crida IA) ---
-    if len(s) < MIN_ANSWER_CHARS:
-        _push("warning",
-              "✏️ La teva resposta és massa curta per avaluar-la bé. "
-              "Desenvolupa la idea (almenys una frase completa) i "
-              "torna-la a enviar.")
-        return
-
-    # --- Pas normal: avaluació via IA (consumeix quota) ---
-    if _api_quota_exhausted():
-        _push_quota_exhausted_warning()
-        return
-
-    step = PB.PROBLEM["passos"][state["current_step_idx"]]
-    # Construïm el context de trajectòria de la sessió (Proposta 1).
-    judge_context = _build_judge_context(step["id"])
-
-    # Self-consistency selectiva (Proposta 5): si tenim quota per a 2
-    # crides, deixem que el judge re-mostregi quan reporta confiança
-    # baixa. Si només en queda 1, desactivem el resample per evitar
-    # exhaurir la quota a mig torn.
-    remaining = MAX_API_CALLS_PER_SESSION - st.session_state.get("api_calls_used", 0)
-    allow_resample = (remaining >= 2)
-
-    _consume_api_quota()
-    try:
-        with st.spinner("Avaluant resposta..."):
-            verdict_obj = L.judge_step(
-                step, s,
-                context=judge_context,
-                allow_resample=allow_resample,
-            )
-    except Exception:
-        _push("warning",
-              "⚠️ El servei d'avaluació no respon ara mateix. "
-              "Torna a enviar la mateixa resposta d'aquí uns segons.")
-        return
-
-    # Si hi ha hagut re-mostreig, comptem la segona crida a la quota.
-    # (La primera ja s'ha consumit abans.)
-    extra_calls = max(0, verdict_obj.get("n_api_calls", 1) - 1)
-    for _ in range(extra_calls):
-        _consume_api_quota()
-
-    v = verdict_obj["verdict"]
-    reason = verdict_obj.get("reason", "")
-    label = verdict_obj.get("error_label")
-
-    state["history"].append({
-        "type": "step",
-        "step_id": step["id"],
-        "student": s,
-        "verdict": v,
-        "error_label": label,
-        "reason": reason,
-        "judge_context": judge_context,
-        # Metadades de self-consistency (Proposta 5) per a auditoria.
-        "confidence": verdict_obj.get("confidence"),
-        "resampled": verdict_obj.get("resampled", False),
-        "initial_verdict": verdict_obj.get("initial_verdict"),
-        "initial_error_label": verdict_obj.get("initial_error_label"),
-        "agreement": verdict_obj.get("agreement"),
-        "resample_failed": verdict_obj.get("resample_failed", False),
-        "n_api_calls": verdict_obj.get("n_api_calls", 1),
-        "ts": time.time(),
-    })
-
-    if v == "correct":
-        state["concept_failure_streak"] = 0
-        _push("feedback", f"✓ **Correcte.** {reason}".strip())
-        state["awaiting_next"] = True
-        return
-
-    state["concept_failure_streak"] += 1
-    streak = state["concept_failure_streak"]
-    cat_msg = PB.ERROR_CATALOG.get(label or "", "") if label else ""
-    feedback = cat_msg or reason or "La resposta no és correcta."
-    _push("feedback", f"✗ {feedback}")
-
-    if v == "conceptual_gap":
-        if streak >= 2:
-            _try_generate_hint(step)
-        else:
-            _activate_prereq()
-    elif v == "typical_error":
-        if streak >= 2:
-            _try_generate_hint(step)
-
-
-# ============================================================
-# Rastre JSON per al professor
-# ============================================================
-def build_trace() -> dict:
-    state = st.session_state.tutor
-    return {
-        "problema": PB.PROBLEM["id"],
-        "tema": PB.PROBLEM["tema"],
-        "started_at": state["started_at"],
-        "durada_s": round(time.time() - state["started_at"], 1),
-        "passos_totals": len(PB.PROBLEM["passos"]),
-        "pas_assolit": state["current_step_idx"],
-        "torns": state["history"],
-        "discrepancies": state["discrepancies"],
-        "pistes_demanades": state["hints_requested"],
-        "crides_api_usades_sessio": st.session_state.get("api_calls_used", 0),
-        "crides_api_limit_sessio": MAX_API_CALLS_PER_SESSION,
-        "veredicte": state["finished"] or "en_curs",
-    }
-
-
-# ============================================================
-# UI: pantalla d'avís inicial
-# ============================================================
-def render_disclaimer():
-    st.title("⚠️ Avís d'ús")
-    st.warning(DISCLAIMER_TEXT)
-    st.markdown("---")
-    acknowledged = st.checkbox(
-        "**Comprenc el que he llegit** i em comprometo a no introduir "
-        "cap dada personal."
-    )
-    if st.button("Començar", type="primary", disabled=not acknowledged):
-        st.session_state.disclaimer_acknowledged = True
-        st.rerun()
-
-
-# ============================================================
-# UI: aplicació principal
-# ============================================================
-def render_sidebar():
-    with st.sidebar:
-        st.markdown("### 📊 Tutor IC")
-        st.markdown(f"**Problema:** {PB.PROBLEM['id']} — {PB.PROBLEM['tema']}")
-        st.markdown("---")
-        st.markdown("**Senyals especials:**")
-        st.markdown(
-            "- `?` → pista socràtica\n"
-            "- `!text` → discrepància («tinc raó perquè...»)\n"
-            "- `!!` → tancar sessió"
+    if action == "advance":
+        stays_before = count_consecutive_stays_in_same_position(
+            history, len(history) - 1
         )
-        st.markdown("---")
-        if st.button("🔄 Reiniciar sessió"):
-            st.session_state.tutor = _new_state()
-            st.rerun()
-        st.markdown("---")
-        st.caption(f"Model: `{L.MODEL}`")
-        # Indicador de quota usada per a tota la sessió de navegador.
-        used = st.session_state.get("api_calls_used", 0)
-        remaining = MAX_API_CALLS_PER_SESSION - used
-        msg = f"Crides API: {used} / {MAX_API_CALLS_PER_SESSION}"
-        if remaining > 5:
-            st.caption(msg)
-        elif remaining > 0:
-            st.warning(f"{msg}  (queden {remaining})")
-        else:
-            st.error(f"{msg}  (límit assolit)")
+        return "green" if stays_before == 0 else "yellow"
 
+    if action == "retreat_to_prereq":
+        return "yellow"
+
+    return "gray"
+
+
+def position_label(state):
+    """Etiqueta curta per al badge de la targeta del tutor."""
+    if state.get("finished"):
+        return None
+    if state.get("active_prereq"):
+        return f"Reforç → Pas {state['step_before_prereq']}"
+    step = state.get("current_step")
+    if step:
+        total = len(PB.PROBLEM["passos"])
+        return f"Pas {step} de {total}"
+    return None
+
+
+# =============================================================================
+# Render: components
+# =============================================================================
 
 def render_problem_header():
-    st.title("📊 Tutor d'interval de confiança")
-    st.markdown(PB.PROBLEM["enunciat"])
-    state = st.session_state.tutor
-    total = len(PB.PROBLEM["passos"])
-    idx = state["current_step_idx"]
-    if state["finished"] is None and idx < total:
-        st.markdown(f"### Pas {idx + 1} de {total}")
-        step = PB.PROBLEM["passos"][idx]
-        st.info(step["text"])
-        # Si hi ha un reforç actiu, mostrem la seva pregunta de manera
-        # persistent perquè l'alumne pugui veure-la durant tota la
-        # mini-sessió, inclosos els reintents introduïts a la proposta 2.
-        if state["active_prereq"] is not None:
-            pre = PB.PREREQUISITES[state["active_prereq"]]
-            attempt = state.get("prereq_attempts", 0)
-            attempt_label = f" (intent {attempt + 1})" if attempt > 0 else ""
-            st.warning(
-                f"🔁 **Exercici de reforç{attempt_label}:** "
-                f"{pre['question']}"
-            )
+    html = (
+        f'<div class="problem-card">'
+        f'<div class="problem-label">Problema</div>'
+        f'<div class="problem-text">{simple_md_to_html(PB.PROBLEM["enunciat"])}</div>'
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def render_messages():
-    state = st.session_state.tutor
-    for msg in state["messages"]:
-        kind = msg["kind"]
-        text = msg["text"]
-        if kind == "feedback":
-            if text.startswith("✓"):
-                st.success(text)
-            else:
-                st.error(text)
-        elif kind == "hint":
-            st.info(text)
-        elif kind == "prereq":
-            st.warning(text)
-        elif kind == "prereq_feedback":
-            # Reintent del reforç: ni èxit ni fallada definitiva.
-            # Estil "advertència" perquè l'alumne ha de tornar a respondre.
-            st.warning(text)
-        elif kind == "prereq_done":
-            st.success(text)
-        elif kind == "discrepancy":
-            st.info(text)
-        elif kind == "system":
-            st.success(text)
-        elif kind == "warning":
-            st.warning(text)
+def render_tutor_card(text, color, badge=None):
+    badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
+    body_html = simple_md_to_html(text)
+    html = (
+        f'<div class="tutor-card tutor-{color}">'
+        f'<div class="tutor-header">'
+        f'<span>🎓 Tutor</span>'
+        f"{badge_html}"
+        f"</div>"
+        f'<div class="tutor-body">{body_html}</div>'
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def render_history():
-    state = st.session_state.tutor
-    if not state["history"]:
-        return
-    with st.expander(f"📋 Historial ({len(state['history'])} torns)"):
-        for h in state["history"]:
-            t = h.get("type", "?")
-            if t == "step":
-                v = h.get("verdict", "")
-                icon = "✓" if v == "correct" else "✗"
-                # Metadades de self-consistency (Proposta 5): mostrem
-                # confiança i, si hi ha hagut re-mostreig, si els dos
-                # samples coincidien.
-                conf = h.get("confidence")
-                conf_str = f" · conf={conf}" if conf else ""
-                if h.get("resampled"):
-                    init = h.get("initial_verdict", "?")
-                    agree = h.get("agreement")
-                    if agree:
-                        rs = f" · re-mostrejat (acord amb {init})"
-                    else:
-                        rs = f" · re-mostrejat (canvi: {init}→{v})"
-                else:
-                    rs = ""
-                st.markdown(
-                    f"**Pas {h.get('step_id')}** — {icon} *{v}*{conf_str}{rs}  \n"
-                    f"_Alumne:_ {h.get('student', '')}  \n"
-                    f"_IA:_ {h.get('reason', '')}"
-                )
-            elif t == "prereq":
-                # Compatibilitat: format antic feia servir "correct" (bool);
-                # format nou (proposta 2) fa servir "verdict" (str de tres
-                # valors). Si tots dos hi són, "verdict" mana.
-                v = h.get("verdict")
-                if v is not None:
-                    icon = "✓" if v == "correct" else (
-                        "↻" if v == "keyword_only" else "✗"
-                    )
-                    attempt = h.get("attempt", "?")
-                    conf = h.get("confidence")
-                    conf_str = f" · conf={conf}" if conf else ""
-                    if h.get("resampled"):
-                        init = h.get("initial_verdict", "?")
-                        agree = h.get("agreement")
-                        rs = (f" · re-mostrejat (acord amb {init})"
-                              if agree
-                              else f" · re-mostrejat (canvi: {init}→{v})")
-                    else:
-                        rs = ""
-                    st.markdown(
-                        f"**Prereq {h.get('prereq_id')}** "
-                        f"(intent {attempt}) — {icon} *{v}*{conf_str}{rs}  \n"
-                        f"_Alumne:_ {h.get('student', '')}  \n"
-                        f"_IA:_ {h.get('reason', '')}"
-                    )
-                else:
-                    ok = "✓" if h.get("correct") else "✗"
-                    st.markdown(
-                        f"**Prereq {h.get('prereq_id')}** — {ok}  \n"
-                        f"_Alumne:_ {h.get('student', '')}"
-                    )
-            elif t == "discrepancy":
-                st.markdown(
-                    f"**Discrepància** (pas {h.get('step_id')}): "
-                    f"{h.get('text', '')}"
-                )
-            elif t == "hint":
-                # Entries de pista afegides a la Proposta 3.
-                scope = h.get("scope", "step")
-                if scope == "prereq":
-                    where = f"prereq {h.get('prereq_id', '?')}"
-                else:
-                    where = f"pas {h.get('step_id', '?')}"
-                ctx = "amb context" if h.get("had_student_context") else "sense context"
-                auto = " (auto)" if h.get("auto") else ""
-                st.markdown(
-                    f"**💡 Pista** ({where}, {ctx}){auto}  \n"
-                    f"_IA:_ {h.get('text', '')}"
-                )
-            st.markdown("---")
+def render_thinking_card():
+    html = (
+        '<div class="tutor-card tutor-thinking">'
+        '<div class="tutor-header"><span>🎓 Tutor</span></div>'
+        '<div class="tutor-body"><p>Pensant…</p></div>'
+        "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def render_trace():
-    state = st.session_state.tutor
-    if state["finished"] is None:
-        return
-    with st.expander("🔍 Rastre JSON (per al professor)"):
-        st.json(build_trace())
+# =============================================================================
+# Render: vista de conversa
+# =============================================================================
 
-
-# ============================================================
-# Main
-# ============================================================
-def main():
-    # Estat top-level (no es reseteja amb "Reiniciar sessió").
-    if "disclaimer_acknowledged" not in st.session_state:
-        st.session_state.disclaimer_acknowledged = False
-    if "api_calls_used" not in st.session_state:
-        st.session_state.api_calls_used = 0
-
-    # Gate: si encara no s'ha acceptat l'avís, només mostrem la pantalla
-    # d'avís. Cap altra cosa es renderitza fins que l'usuari cliqui
-    # "Començar".
-    if not st.session_state.disclaimer_acknowledged:
-        render_disclaimer()
-        return
-
-    # Estat tutorial per a aquest problema.
-    if "tutor" not in st.session_state:
-        st.session_state.tutor = _new_state()
-
-    render_sidebar()
+def render_chat_view(state):
+    """Mostra només el torn actual: cap historial al viewport."""
     render_problem_header()
-    render_messages()
 
-    state = st.session_state.tutor
+    latest_tutor = next(
+        (t["content"] for t in reversed(state["transcript"])
+         if t["role"] == "tutor"),
+        None,
+    )
+    color = determine_turn_color(state)
+    badge = position_label(state)
 
-    if state["finished"] is None:
-        if state["awaiting_next"]:
-            if st.button("Següent →", type="primary"):
-                state["messages"] = []
-                state["awaiting_next"] = False
-                state["current_step_idx"] += 1
-                _maybe_finish()
-                st.rerun()
-        else:
-            with st.form("answer_form", clear_on_submit=True):
-                answer = st.text_area(
-                    "La teva resposta:",
-                    key="answer_input",
-                    height=100,
-                    placeholder="Escriu aquí... (o `?` per a pista, `!text` per discrepància)",
-                )
-                col1, col2, col3 = st.columns([1, 1, 4])
-                with col1:
-                    submitted = st.form_submit_button("Enviar ↵")
-                with col2:
-                    hint_btn = st.form_submit_button("? Pista")
-                with col3:
-                    exit_btn = st.form_submit_button("✕ Sortir")
+    # st.empty() ens permet substituir el contingut durant la crida
+    # LLM amb el placeholder "Pensant…".
+    tutor_slot = st.empty()
+    with tutor_slot.container():
+        render_tutor_card(latest_tutor, color, badge)
 
-            if submitted and answer.strip():
-                process_turn(answer)
-                st.rerun()
-            elif hint_btn:
-                process_turn("?")
-                st.rerun()
-            elif exit_btn:
-                process_turn("!!")
-                st.rerun()
+    col_hint, col_end = st.columns(2)
+    with col_hint:
+        hint_clicked = st.button(
+            "💡 Demanar pista",
+            use_container_width=True,
+            key="btn_hint",
+        )
+    with col_end:
+        end_clicked = st.button(
+            "🚪 Acabar sessió",
+            use_container_width=True,
+            key="btn_end",
+        )
+
+    user_input = st.chat_input("Escriu la teva resposta…")
+
+    if end_clicked:
+        state["finished"] = True
+        st.rerun()
+
+    student_msg = None
+    if hint_clicked:
+        student_msg = HINT_MARKER
+    elif user_input:
+        student_msg = user_input
+
+    if student_msg is None:
+        return
+
+    # Substituïm la targeta amb "Pensant…" abans de la crida.
+    with tutor_slot.container():
+        render_thinking_card()
+
+    state["transcript"].append({"role": "student", "content": student_msg})
+    state["turn_count"] += 1
+
+    try:
+        t0 = time.time()
+        result = L.tutor_turn(
+            PB.PROBLEM,
+            S.position_dict(state),
+            state["transcript"],
+        )
+        elapsed = time.time() - t0
+    except Exception as exc:
+        st.error(
+            f"Error tècnic en cridar el model: {type(exc).__name__}: {exc}"
+        )
+        state["transcript"].pop()
+        state["turn_count"] -= 1
+        st.stop()
+
+    # CRÍTIC: afegir el reply al transcript abans del següent torn.
+    # (Bug original del simulator que el sistema arrastrava.)
+    state["transcript"].append({"role": "tutor", "content": result["reply"]})
+
+    position_before = {
+        "step": state["current_step"],
+        "prereq": state["active_prereq"],
+    }
+    S.apply_action(state, result["action"])
+    position_after = {
+        "step": state["current_step"],
+        "prereq": state["active_prereq"],
+    }
+    state["history"].append({
+        "turn": state["turn_count"],
+        "ts": time.time(),
+        "student_msg": student_msg,
+        "tutor_reply": result["reply"],
+        "action": result["action"],
+        "objectives_met": result["objectives_met"],
+        "control_parse_ok": result["control_parse_ok"],
+        "position_before": position_before,
+        "position_after": position_after,
+        "elapsed_seconds": elapsed,
+    })
+
+    st.rerun()
+
+
+# =============================================================================
+# Render: vista de resum
+# =============================================================================
+
+def render_summary_view(state):
+    qs = state.get("quality_signals") or S.compute_quality_signals(state)
+
+    if qs["completed"]:
+        title = "🎉 Sessió completada"
+        s = "s" if qs["total_turns_llm"] != 1 else ""
+        subtitle = f"Has acabat el problema en {qs['total_turns_llm']} torn{s}."
+        header_class = "summary-success"
     else:
-        if state["finished"] == "solved":
-            st.balloons()
-        elif state["finished"] == "abandoned":
-            st.info("Sessió tancada. Pots reiniciar al panell de l'esquerra.")
+        title = "Sessió finalitzada"
+        s = "s" if qs["total_turns_llm"] != 1 else ""
+        subtitle = f"Has fet {qs['total_turns_llm']} torn{s} abans d'acabar."
+        header_class = "summary-neutral"
 
-    render_history()
-    render_trace()
+    st.markdown(
+        f'<div class="summary-header {header_class}">'
+        f"<h1>{title}</h1>"
+        f"<p>{subtitle}</p>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Torns LLM", qs["total_turns_llm"])
+    with col2:
+        secs = int(qs["elapsed_seconds_total"])
+        label = f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
+        st.metric("Durada", label)
+    with col3:
+        ratio = qs["stay_advance_ratio"]
+        label = f"{ratio:.2f}" if ratio is not None else "—"
+        st.metric(
+            "Stays / advance",
+            label,
+            help="Quants torns d'insistència per cada avenç (menor = més fluït).",
+        )
+
+    st.markdown("---")
+
+    st.markdown("### Distribució de torns")
+    tps = qs["turns_per_step"]
+    max_count = max(list(tps.values()) + [qs["turns_in_prereq"]] + [1])
+
+    for step in sorted(tps.keys()):
+        count = tps[step]
+        if count == 0:
+            st.markdown(f"**Pas {step}** — cap torn")
+        else:
+            s = "s" if count != 1 else ""
+            st.markdown(f"**Pas {step}** — {count} torn{s}")
+            st.progress(count / max_count)
+
+    if qs["used_prereq"]:
+        s = "s" if qs["turns_in_prereq"] != 1 else ""
+        st.markdown(f"**Reforç PRE-PARAM** — {qs['turns_in_prereq']} torn{s}")
+        st.progress(qs["turns_in_prereq"] / max_count)
+
+    st.markdown("---")
+
+    st.markdown("### Senyals")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        ac = qs["action_counts"]
+        st.markdown(
+            "**Decisions del tutor**\n\n"
+            f"- ✅ Avenços: **{ac['advance']}**\n"
+            f"- ⏸️ Stays: **{ac['stay']}**\n"
+            f"- 📘 Retreats: **{ac['retreat_to_prereq']}**"
+        )
+    with col_b:
+        notes = []
+        if qs["hint_requests"]:
+            notes.append(f"💡 {qs['hint_requests']} sol·licituds de pista")
+        if qs["used_prereq"]:
+            notes.append(f"📘 Reforç actiu durant {qs['turns_in_prereq']} torns")
+        if qs["parse_failures"]:
+            notes.append(
+                f"⚠ {qs['parse_failures']} falles tècniques del control block"
+            )
+        if not notes:
+            notes.append("✓ Cap incidència destacada.")
+        st.markdown(
+            "**Esdeveniments**\n\n" + "\n".join(f"- {n}" for n in notes)
+        )
+
+    st.markdown("---")
+
+    col_new, _ = st.columns([1, 1])
+    with col_new:
+        if st.button(
+            "🔄 Iniciar nova sessió",
+            use_container_width=True,
+            key="btn_new",
+        ):
+            st.session_state.clear()
+            st.rerun()
+
+    with st.expander("📜 Veure transcripció completa"):
+        for turn in state["transcript"]:
+            role = "🎓 Tutor" if turn["role"] == "tutor" else "👤 Alumne"
+            st.markdown(f"**{role}**")
+            st.markdown(turn["content"])
+            st.markdown("")
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    st.markdown(CSS, unsafe_allow_html=True)
+    st.title("Tutor d'intervals de confiança")
+
+    if "state" not in st.session_state:
+        st.session_state.state = S.new_session()
+
+    state = st.session_state.state
+
+    if state.get("finished"):
+        if "quality_signals" not in state:
+            state["quality_signals"] = S.compute_quality_signals(state)
+        render_summary_view(state)
+    else:
+        render_chat_view(state)
 
 
 if __name__ == "__main__":

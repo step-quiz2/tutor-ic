@@ -216,6 +216,201 @@ check("finalització després del pas 3", state["finished"] is True)
 
 
 # -----------------------------------------------------------------------------
+# Test 13 (quality_signals): sessió buida
+# -----------------------------------------------------------------------------
+print("\nTest 13 — quality_signals d'una sessió buida (no history)")
+state = S.new_session()
+qs = S.compute_quality_signals(state)
+check("completed False", qs["completed"] is False)
+check("total_turns_llm 0", qs["total_turns_llm"] == 0)
+check("action_counts tots a zero",
+      qs["action_counts"] == {"stay": 0, "advance": 0, "retreat_to_prereq": 0})
+check("stay_advance_ratio és None (no advances)",
+      qs["stay_advance_ratio"] is None)
+check("turns_per_step tot a zero",
+      all(v == 0 for v in qs["turns_per_step"].values()))
+check("used_prereq False", qs["used_prereq"] is False)
+check("hint_requests 0", qs["hint_requests"] == 0)
+check("parse_failures 0", qs["parse_failures"] == 0)
+
+
+# -----------------------------------------------------------------------------
+# Test 14 (quality_signals): sessió amb dades reals d'alumne1 (3 advances)
+# -----------------------------------------------------------------------------
+print("\nTest 14 — quality_signals d'una sessió amb 3 advances seguits")
+state = S.new_session()
+# Simulem la trajectòria de l'alumne1: 3 torns, tots advance
+fake_history = [
+    {
+        "turn": 1, "student_msg": "Resposta 1",
+        "action": "advance", "objectives_met": [],
+        "control_parse_ok": True,
+        "position_before": {"step": 1, "prereq": None},
+        "position_after": {"step": 2, "prereq": None},
+        "elapsed_seconds": 1.5,
+    },
+    {
+        "turn": 2, "student_msg": "Resposta 2",
+        "action": "advance", "objectives_met": [],
+        "control_parse_ok": True,
+        "position_before": {"step": 2, "prereq": None},
+        "position_after": {"step": 3, "prereq": None},
+        "elapsed_seconds": 2.0,
+    },
+    {
+        "turn": 3, "student_msg": "Resposta 3",
+        "action": "advance", "objectives_met": [],
+        "control_parse_ok": True,
+        "position_before": {"step": 3, "prereq": None},
+        "position_after": {"step": 3, "prereq": None},
+        "elapsed_seconds": 1.0,
+    },
+]
+state["history"] = fake_history
+state["turn_count"] = 3
+state["finished"] = True
+
+qs = S.compute_quality_signals(state)
+check("completed True", qs["completed"] is True)
+check("total_turns_llm 3", qs["total_turns_llm"] == 3)
+check("advance count 3", qs["action_counts"]["advance"] == 3)
+check("stay count 0", qs["action_counts"]["stay"] == 0)
+check("stay_advance_ratio 0.0", qs["stay_advance_ratio"] == 0.0)
+check("turns per step 1=1, 2=1, 3=1",
+      qs["turns_per_step"] == {1: 1, 2: 1, 3: 1})
+check("used_prereq False", qs["used_prereq"] is False)
+check("avg_elapsed = 1.5", qs["avg_elapsed_seconds_per_turn"] == 1.5)
+
+
+# -----------------------------------------------------------------------------
+# Test 15 (quality_signals): sessió amb stays, retreat, pista i parse fail
+# -----------------------------------------------------------------------------
+print("\nTest 15 — quality_signals amb tot l'arsenal d'esdeveniments")
+state = S.new_session()
+state["history"] = [
+    # 2 stays al pas 1
+    {"turn": 1, "student_msg": "Resp 1", "action": "stay",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 1, "prereq": None}, "elapsed_seconds": 1.0},
+    {"turn": 2, "student_msg": "Resp 2", "action": "stay",
+     "objectives_met": [], "control_parse_ok": False,  # parse fail!
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 1, "prereq": None}, "elapsed_seconds": 1.0},
+    # Retreat
+    {"turn": 3, "student_msg": "Resp 3", "action": "retreat_to_prereq",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "elapsed_seconds": 2.0},
+    # 2 torns dins reforç
+    {"turn": 4, "student_msg": "(L'alumne demana una pista)",  # pista!
+     "action": "stay", "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "elapsed_seconds": 1.5},
+    {"turn": 5, "student_msg": "Resp 5", "action": "advance",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_after": {"step": 1, "prereq": None},
+     "elapsed_seconds": 1.0},
+    # Avancen fins finalitzar
+    {"turn": 6, "student_msg": "Resp 6", "action": "advance",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 2, "prereq": None}, "elapsed_seconds": 1.0},
+]
+state["turn_count"] = 6
+state["finished"] = False
+
+qs = S.compute_quality_signals(state)
+check("stay count 3", qs["action_counts"]["stay"] == 3)
+check("advance count 2", qs["action_counts"]["advance"] == 2)
+check("retreat count 1", qs["action_counts"]["retreat_to_prereq"] == 1)
+check("stay/advance ratio 1.5",
+      qs["stay_advance_ratio"] == 1.5)
+check("turns at step 1 (no prereq) = 4",
+      qs["turns_per_step"][1] == 4,
+      f"got {qs['turns_per_step']}")
+check("turns_in_prereq = 2",
+      qs["turns_in_prereq"] == 2)
+check("used_prereq True", qs["used_prereq"] is True)
+check("hint_requests = 1", qs["hint_requests"] == 1)
+check("parse_failures = 1", qs["parse_failures"] == 1)
+
+
+# -----------------------------------------------------------------------------
+# Test 16 (quality_signals): format_quality_signals retorna text llegible
+# -----------------------------------------------------------------------------
+print("\nTest 16 — format_quality_signals dóna text llegible")
+qs = {
+    "completed": True, "total_turns_llm": 3,
+    "elapsed_seconds_total": 5.5, "avg_elapsed_seconds_per_turn": 1.83,
+    "action_counts": {"stay": 1, "advance": 2, "retreat_to_prereq": 0},
+    "stay_advance_ratio": 0.5,
+    "turns_per_step": {1: 1, 2: 2, 3: 0},
+    "used_prereq": False, "turns_in_prereq": 0,
+    "hint_requests": 0, "parse_failures": 0,
+}
+text = S.format_quality_signals(qs)
+check("conté 'Quality signals'", "Quality signals" in text)
+check("conté 'Completat: True'", "Completat: True" in text)
+check("conté ràtio formatada", "0.50" in text)
+check("conté 'Torns LLM: 3'", "Torns LLM: 3" in text)
+check("línies múltiples", "\n" in text)
+
+# Ràtio None es mostra 'n/a'
+qs_no_advance = dict(qs)
+qs_no_advance["stay_advance_ratio"] = None
+text2 = S.format_quality_signals(qs_no_advance)
+check("ràtio None es renderitza 'n/a'", "n/a" in text2)
+
+
+# -----------------------------------------------------------------------------
+# Test 17 (quality_signals): elapsed_total amb timestamps reals
+# -----------------------------------------------------------------------------
+# Regressió: a una versió anterior, elapsed_seconds_total es calculava
+# com time.time() - started_at, donant temps falsos si es processava un
+# JSON desat hores després. Verifiquem que ara fa servir history[-1].ts
+# si està present.
+print("\nTest 17 — elapsed_seconds_total prové del timestamp del darrer torn")
+state = S.new_session()
+# Inicialitzem started_at i ts a valors fixes (com si fos un JSON desat)
+state["started_at"] = 1000.0
+state["history"] = [
+    {"turn": 1, "student_msg": "x", "action": "advance",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 2, "prereq": None},
+     "elapsed_seconds": 1.0, "ts": 1015.0},  # 15s després
+]
+state["turn_count"] = 1
+qs = S.compute_quality_signals(state)
+check("elapsed_total = ts_last - started_at = 15.0",
+      qs["elapsed_seconds_total"] == 15.0,
+      f"got {qs['elapsed_seconds_total']}")
+
+# Cas sense ts al rastre (rastres antics o sintètics): cau a la suma
+# d'elapsed_seconds.
+state["history"] = [
+    {"turn": 1, "student_msg": "x", "action": "stay",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 1, "prereq": None},
+     "elapsed_seconds": 2.5},
+    {"turn": 2, "student_msg": "y", "action": "stay",
+     "objectives_met": [], "control_parse_ok": True,
+     "position_before": {"step": 1, "prereq": None},
+     "position_after": {"step": 1, "prereq": None},
+     "elapsed_seconds": 1.5},
+]
+qs2 = S.compute_quality_signals(state)
+check("sense ts → suma d'elapsed_seconds",
+      qs2["elapsed_seconds_total"] == 4.0,
+      f"got {qs2['elapsed_seconds_total']}")
+
+
+# -----------------------------------------------------------------------------
 # Resum
 # -----------------------------------------------------------------------------
 print()

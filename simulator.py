@@ -113,6 +113,135 @@ def position_dict(state):
     return {"step": state["current_step"], "prereq": state["active_prereq"]}
 
 
+def compute_quality_signals(state: dict) -> dict:
+    """Calcula mètriques agregades de qualitat de la sessió a partir del
+    rastre detallat (state['history']) i metadades. Aquest bloc s'adjunta
+    al state al final de la sessió per al professor que la revisa.
+
+    Cada camp respon a una pregunta concreta:
+      - completed, total_turns_llm: acaba? en quants torns?
+      - action_counts, stay_advance_ratio: quanta dificultat? (molt stay
+        per advance = molt encallat)
+      - turns_per_step: a quin pas s'ha encallat?
+      - used_prereq, turns_in_prereq: necessita base prèvia?
+      - hint_requests: confiança? (moltes pistes = inseguretat)
+      - parse_failures: salut tècnica de la sessió
+      - elapsed_seconds_total, avg_elapsed_seconds_per_turn: latència
+
+    Cost: O(N) sobre len(history). Barat per a sessions normals (<50 torns).
+    """
+    history = state.get("history", [])
+
+    # Comptadors d'accions presos pel model
+    action_counts = {"stay": 0, "advance": 0, "retreat_to_prereq": 0}
+    for e in history:
+        action = e.get("action")
+        if action in action_counts:
+            action_counts[action] += 1
+
+    # Ràtio stay:advance. Si no hi ha advances, és None — el professor
+    # ho llegirà com "no hi ha hagut progressió". No el forcem a 0.0
+    # o a infinit perquè cap dels dos transmet la idea correctament.
+    if action_counts["advance"] > 0:
+        stay_advance_ratio = round(
+            action_counts["stay"] / action_counts["advance"], 2
+        )
+    else:
+        stay_advance_ratio = None
+
+    # Distribució de torns per pas i en reforç.
+    # Per cada entrada del rastre, mirem on estava l'alumne ABANS de la
+    # crida (position_before): aquell torn s'imputa allà. Així, un torn
+    # que avança del pas 2 al pas 3 compta com a "torn al pas 2".
+    total_steps = len(PB.PROBLEM["passos"])
+    turns_per_step = {n: 0 for n in range(1, total_steps + 1)}
+    turns_in_prereq = 0
+    for e in history:
+        pb = e.get("position_before", {})
+        if pb.get("prereq"):
+            turns_in_prereq += 1
+        elif pb.get("step") in turns_per_step:
+            turns_per_step[pb["step"]] += 1
+
+    # Sol·licituds de pista. Marcador literal que el simulador injecta
+    # quan l'alumne escriu `?` — si algun dia canvia, aquesta línia
+    # també.
+    hint_marker = "(L'alumne demana una pista)"
+    hint_requests = sum(1 for e in history
+                        if e.get("student_msg") == hint_marker)
+
+    # Falles de parse del control block (model va retornar sense
+    # separador, o JSON malformat → fallback a action=stay).
+    parse_failures = sum(1 for e in history
+                         if e.get("control_parse_ok") is False)
+
+    # Temps total i mitjana per torn.
+    #
+    # Important: elapsed_total NO es calcula amb `time.time() - started_at`
+    # perquè la funció es pot cridar molt després del final de la sessió
+    # (per ex., re-processant un JSON desat) i donaria temps absurds.
+    # Calculem el delta entre l'inici i el timestamp del DARRER torn LLM,
+    # que sempre és vàlid si la sessió ha tingut almenys un torn.
+    if history:
+        last_ts = history[-1].get("ts")
+        started_at = state.get("started_at")
+        if last_ts is not None and started_at is not None:
+            elapsed_total = last_ts - started_at
+        else:
+            # Rastre sense timestamps (cas de tests amb dades sintètiques).
+            # Caiem a la suma del temps per torn — informació de sistema,
+            # no captura les pauses entre torns, però mai dóna xifres
+            # falses.
+            elapsed_total = sum(e.get("elapsed_seconds", 0.0)
+                                for e in history)
+    else:
+        elapsed_total = 0.0
+
+    elapsed_times = [e.get("elapsed_seconds", 0.0) for e in history]
+    avg_elapsed = (sum(elapsed_times) / len(elapsed_times)
+                   if elapsed_times else 0.0)
+
+    return {
+        "completed": bool(state.get("finished", False)),
+        "total_turns_llm": int(state.get("turn_count", 0)),
+        "elapsed_seconds_total": round(elapsed_total, 1),
+        "avg_elapsed_seconds_per_turn": round(avg_elapsed, 2),
+        "action_counts": action_counts,
+        "stay_advance_ratio": stay_advance_ratio,
+        "turns_per_step": turns_per_step,
+        "used_prereq": turns_in_prereq > 0,
+        "turns_in_prereq": turns_in_prereq,
+        "hint_requests": hint_requests,
+        "parse_failures": parse_failures,
+    }
+
+
+def format_quality_signals(qs: dict) -> str:
+    """Render llegible del bloc quality_signals per al terminal al final
+    de la sessió. JSON crud per al fitxer; aquest format per a la persona."""
+    ratio = (f"{qs['stay_advance_ratio']:.2f}"
+             if qs['stay_advance_ratio'] is not None else "n/a")
+    ac = qs["action_counts"]
+    tps_parts = [f"pas {n}: {c}" for n, c in qs["turns_per_step"].items() if c > 0]
+    tps = ", ".join(tps_parts) if tps_parts else "(cap torn registrat)"
+    prereq_info = (f"sí ({qs['turns_in_prereq']} torns)"
+                   if qs["used_prereq"] else "no")
+    lines = [
+        "=== Quality signals ===",
+        f"  Completat: {qs['completed']}",
+        f"  Torns LLM: {qs['total_turns_llm']}    "
+        f"Temps total: {qs['elapsed_seconds_total']}s    "
+        f"Mitja/torn: {qs['avg_elapsed_seconds_per_turn']}s",
+        f"  Accions: stay={ac['stay']}, advance={ac['advance']}, "
+        f"retreat={ac['retreat_to_prereq']}    Ràtio stay/advance: {ratio}",
+        f"  Distribució torns: {tps}",
+        f"  Reforç usat: {prereq_info}",
+        f"  Sol·licituds de pista: {qs['hint_requests']}    "
+        f"Parse failures: {qs['parse_failures']}",
+    ]
+    return "\n".join(lines)
+
+
 def position_summary(state):
     """Resum llegible per al display al terminal."""
     if state["finished"]:
@@ -339,6 +468,12 @@ def run_session(debug_mode=False, save_path=None, use_color=True):
                 f"temps={elapsed:.1f}s"
             )
 
+    # Tancament: calcular i adjuntar quality_signals abans de desar o
+    # imprimir. D'aquesta manera, qualsevol JSON desat (--save o
+    # /save) conté el bloc, i la sortida del terminal el mostra a la
+    # persona que ha corregut la sessió.
+    state["quality_signals"] = compute_quality_signals(state)
+
     # Tancament: save automàtic si --save
     if save_path:
         try:
@@ -349,6 +484,7 @@ def run_session(debug_mode=False, save_path=None, use_color=True):
             disp.error(f"Error desant a {save_path}: {e}")
 
     disp.meta(f"=== Fi de sessió ({state['turn_count']} torns LLM) ===")
+    disp.meta(format_quality_signals(state["quality_signals"]))
     return state
 
 
