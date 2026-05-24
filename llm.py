@@ -38,7 +38,7 @@ import problem as PB
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v1.1"
+PROMPT_VERSION = "v1.2"
 
 # Reintents per a errors transitoris de l'API.
 MAX_ATTEMPTS = 3
@@ -162,14 +162,21 @@ def _is_retriable(err: Exception) -> bool:
 
 def _format_position_marker(current_position: dict) -> str:
     """Construeix la línia de marcador de posició que s'antepondrà al
-    darrer missatge user. El system prompt v1.1 documenta aquest
+    darrer missatge user. El system prompt v1.2 documenta aquest
     format i instrueix el model a respectar-lo com a font de veritat
     sobre on és la sessió.
 
-    Format:
-      [Posició actual: Pas N de TOTAL]                      — pas normal
-      [Posició actual: reforç PRE-PARAM activat (tornaràs al Pas N
-                       en acabar)]                          — en reforç
+    Format v1.2 (més directiu que v1.1 — afegit després de constatar
+    que el marcador "Posició actual: Pas N de 3" sense més no
+    impedia que el model interpretés el marker com "el pas al qual
+    vas" en comptes de "el pas en discussió"):
+
+      [Pas N de TOTAL. L'alumne respon a la teva pregunta del Pas N.
+       Jutja: tanca (advance) o continua (stay).]              — pas normal
+
+      [Reforç PRE-PARAM activat (tornarà al Pas N). L'alumne respon
+       a la pregunta del reforç. Jutja: tanca (advance) o continua
+       (stay).]                                                 — en reforç
 
     Si no podem determinar la posició (current_position buit o sense
     camps reconeixibles), retornem cadena buida — el model continua
@@ -183,13 +190,18 @@ def _format_position_marker(current_position: dict) -> str:
 
     if prereq:
         if step is not None:
-            return (f"[Posició actual: reforç {prereq} activat "
-                    f"(tornaràs al Pas {step} en acabar)]")
-        return f"[Posició actual: reforç {prereq} activat]"
+            return (f"[Reforç {prereq} activat (tornarà al Pas {step}). "
+                    f"L'alumne respon a la pregunta del reforç. "
+                    f"Jutja: tanca (advance) o continua (stay).]")
+        return (f"[Reforç {prereq} activat. "
+                f"L'alumne respon a la pregunta del reforç. "
+                f"Jutja: tanca (advance) o continua (stay).]")
 
     if step is not None:
         total = len(PB.PROBLEM["passos"])
-        return f"[Posició actual: Pas {step} de {total}]"
+        return (f"[Pas {step} de {total}. "
+                f"L'alumne respon a la teva pregunta del Pas {step}. "
+                f"Jutja: tanca (advance) o continua (stay).]")
 
     return ""
 

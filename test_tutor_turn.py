@@ -221,13 +221,14 @@ check("ordre rol: model, user, model, user",
 check("primer text correcte (sense marcador)",
       c[0]["parts"][0]["text"] == "Welcome")
 check("primer torn user NO té marcador",
-      "[Posició actual:" not in c[1]["parts"][0]["text"])
+      "[Pas " not in c[1]["parts"][0]["text"])
 check("últim missatge user conté el text de l'alumne",
       "Resposta 2" in c[3]["parts"][0]["text"])
-check("últim missatge user té el marcador de posició (v1.1)",
-      "[Posició actual:" in c[3]["parts"][0]["text"])
-check("marcador inclou 'Pas 2 de 3'",
-      "Pas 2 de 3" in c[3]["parts"][0]["text"])
+check("últim missatge user té el marcador de posició (v1.2)",
+      "[Pas 2 de 3" in c[3]["parts"][0]["text"])
+check("marcador inclou directiva advance/stay",
+      "advance" in c[3]["parts"][0]["text"]
+      and "stay" in c[3]["parts"][0]["text"])
 check("system_instruction passat", captured["system"] is not None)
 
 
@@ -290,26 +291,35 @@ for i, (raw, expected_action) in enumerate(samples):
 
 
 # -----------------------------------------------------------------------------
-# Test 13 (v1.1): _format_position_marker per a cada estat possible
+# Test 13 (v1.2): _format_position_marker per a cada estat possible
 # -----------------------------------------------------------------------------
-print("\nTest 13 — format del marcador de posició (v1.1)")
+print("\nTest 13 — format del marcador de posició (v1.2)")
 m = llm._format_position_marker({"step": 1, "prereq": None})
-check("marcador pas 1", "[Posició actual: Pas 1 de 3]" == m,
-      f"got {m!r}")
+check("marcador pas 1 conté 'Pas 1 de 3'", "Pas 1 de 3" in m)
+check("marcador pas 1 conté directiva 'advance'", "advance" in m)
+check("marcador pas 1 conté directiva 'stay'", "stay" in m)
+check("marcador pas 1 menciona pregunta del Pas",
+      "pregunta del Pas 1" in m)
+
 m = llm._format_position_marker({"step": 2, "prereq": None})
-check("marcador pas 2", "[Posició actual: Pas 2 de 3]" == m)
+check("marcador pas 2 conté 'Pas 2 de 3'", "Pas 2 de 3" in m)
+check("marcador pas 2 menciona pregunta del Pas 2",
+      "pregunta del Pas 2" in m)
+
 m = llm._format_position_marker({"step": 3, "prereq": None})
-check("marcador pas 3", "[Posició actual: Pas 3 de 3]" == m)
+check("marcador pas 3 conté 'Pas 3 de 3'", "Pas 3 de 3" in m)
 
 m = llm._format_position_marker({"step": 1, "prereq": "PRE-PARAM"})
-check("marcador reforç inclou 'PRE-PARAM activat'",
-      "PRE-PARAM activat" in m)
-check("marcador reforç inclou 'tornaràs al Pas 1'",
-      "tornaràs al Pas 1" in m)
+check("marcador reforç inclou 'Reforç PRE-PARAM activat'",
+      "Reforç PRE-PARAM activat" in m)
+check("marcador reforç inclou 'tornarà al Pas 1'",
+      "tornarà al Pas 1" in m)
+check("marcador reforç menciona pregunta del reforç",
+      "pregunta del reforç" in m)
 
 m = llm._format_position_marker({"step": 2, "prereq": "PRE-PARAM"})
-check("marcador reforç des de pas 2 té 'tornaràs al Pas 2'",
-      "tornaràs al Pas 2" in m)
+check("marcador reforç des de pas 2 té 'tornarà al Pas 2'",
+      "tornarà al Pas 2" in m)
 
 m = llm._format_position_marker({})
 check("posició buida → marcador buit", m == "")
@@ -345,11 +355,11 @@ check("hi ha 3 missatges user", len(user_indices) == 3)
 for idx in user_indices[:-1]:
     text = c[idx]["parts"][0]["text"]
     check(f"missatge user idx={idx} sense marcador",
-          "[Posició actual:" not in text)
+          "[Pas " not in text)
 # El darrer SÍ.
 last_text = c[user_indices[-1]]["parts"][0]["text"]
 check("darrer missatge user té marcador",
-      "[Posició actual:" in last_text)
+      "[Pas 2 de 3" in last_text)
 check("darrer missatge user conté el text original",
       "Tercera (darrera)" in last_text)
 
@@ -372,10 +382,12 @@ transcript_in_prereq = [
 llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-PARAM"},
                transcript_in_prereq)
 last_text = captured["contents"][-1]["parts"][0]["text"]
-check("marcador menciona reforç PRE-PARAM",
-      "PRE-PARAM" in last_text)
-check("marcador menciona retorn a Pas 1",
+check("marcador menciona Reforç PRE-PARAM activat",
+      "Reforç PRE-PARAM activat" in last_text)
+check("marcador menciona retorn al Pas 1",
       "Pas 1" in last_text)
+check("marcador inclou directiva advance/stay",
+      "advance" in last_text and "stay" in last_text)
 check("text original preservat", "Resposta" in last_text)
 
 
@@ -393,7 +405,7 @@ llm._call = capture_call_16
 llm.tutor_turn(PB.PROBLEM, {}, BASIC_TRANSCRIPT)
 last_text = captured["contents"][-1]["parts"][0]["text"]
 check("amb current_position buit, no s'afegeix marcador",
-      "[Posició actual:" not in last_text)
+      "[Pas " not in last_text and "[Reforç " not in last_text)
 check("text original preservat",
       "mitjana" in last_text)
 
