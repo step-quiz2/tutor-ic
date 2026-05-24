@@ -1,4 +1,4 @@
-git add . && git commit -m "versió" && git push && python -m streamlit run app.py"""
+"""
 app.py — Streamlit UI per al tutor IC (arquitectura Nivell 1).
 
 Substitueix la versió anterior basada en classificadors. La lògica
