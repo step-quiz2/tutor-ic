@@ -1,3 +1,20 @@
+> ⚠️ **NOTA HISTÒRICA — REGISTRE D'UN PLA DE CANVIS ABANDONAT**
+>
+> Aquest document detalla l'aplicació de les Propostes 1-5 sobre
+> l'arquitectura de tres classificadors LLM. Tots aquests canvis
+> **es van abandonar el 24/05/2026** quan, després d'observar el
+> comportament del sistema sofisticat en una sessió real, es va
+> decidir un redisseny a arquitectura conversacional amb una sola
+> crida (`tutor_turn`).
+>
+> Lectura fora de context: les Propostes 1-5 estan implementades al
+> codi viu. **No ho estan.** Aquest document és l'únic lloc on
+> queden registrades; el codi corresponent està arxivat a
+> `archive/pre-conversational/` (si encara hi és) o eliminat. Veure
+> `CHANGELOG.md` per a la transició al sistema actual.
+
+---
+
 # Registre de canvis — sofisticació de la interacció
 
 Aquest fitxer documenta l'aplicació iterativa de les propostes del

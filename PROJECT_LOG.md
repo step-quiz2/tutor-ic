@@ -1,3 +1,19 @@
+> ⚠️ **NOTA HISTÒRICA — DOCUMENT D'UNA ARQUITECTURA ABANDONADA**
+>
+> Aquest document descriu el desenvolupament d'una arquitectura
+> basada en tres classificadors LLM (`judge_step`, `judge_prereq`,
+> `generate_hint`) que **es va abandonar el 24/05/2026**. El sistema
+> actual usa una arquitectura conversacional amb **una sola crida**
+> al model per torn (`tutor_turn`).
+>
+> Es conserva aquest registre per a posteritat metodològica: il·lustra
+> com una sèrie d'optimitzacions ben argumentades sobre una
+> arquitectura equivocada pot degradar el resultat global. Veure
+> `README.md` per a la descripció del sistema actual i `CHANGELOG.md`
+> per a la transició.
+
+---
+
 # Iterative Refinement of an LLM-as-Judge Classifier — Project Log
 
 **Audience:** another LLM picking up the project, or a human researcher.

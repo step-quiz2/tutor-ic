@@ -1,75 +1,100 @@
-# Sistema d'avaluació (EVAL)
+# Avaluació i tests
 
-Aquest mòdul comprova que `llm.judge_step` (la crida central del sistema)
-es comporta com prediuen les precondicions/postcondicions declarades a
-priori a `eval_cases.py`.
+Aquest projecte té tres suites de test, totes executables sense clau
+Gemini real (els tests stubben les crides al model). Total: **172
+tests**.
 
-## Estructura
+## Suites
 
-- **`eval_cases.py`** — *dataset*. 30 casos:
-  - 12 `correct` (4 per pas, paràfrasis canòniques)
-  - 12 `typical_error` (4 per pas, l'error d'Aran en diferents formes)
-  - 6 `conceptual_gap` (2 per pas, buits clars)
-- **`eval_runner.py`** — *runner*. Itera, crida la IA real, compara,
-  reporta.
+### `test_tutor_turn.py` — 71 tests
+
+Cobreix les mecàniques de la funció pública `llm.tutor_turn()`:
+
+- Parse correcte de respostes ben formades amb cada acció.
+- Coerció a `stay` davant d'accions invàlides o JSON malformat.
+- Tolerància a `---CONTROL---` embolicat en fences ` ```json `.
+- Validació d'invariants del transcript (no buit, acaba en student,
+  alternança user/model).
+- Construcció correcta del multi-turn `contents` passat a Gemini.
+- Carrega i interpolació del system prompt.
+- Injecció del marcador de posició al darrer missatge user.
+- Format del marcador a tots els estats possibles (pas normal, reforç
+  actiu, sense posició).
+
+### `test_simulator_state.py` — 69 tests
+
+Cobreix la màquina d'estats compartida entre simulator i app, i el
+bloc `quality_signals`:
+
+- Transicions `stay` / `advance` / `retreat_to_prereq` des de tots els
+  estats possibles.
+- Avenç des de l'últim pas → `finished=True`.
+- Cicle complet de reforç (retreat → diversos torns → advance →
+  retorn al pas previ).
+- `compute_quality_signals` sobre sessions buides, netes, amb
+  arsenal complet d'esdeveniments (stays, retreats, pistes,
+  parse failures).
+- Càlcul correcte de `elapsed_seconds_total` des de timestamps del
+  rastre (no del rellotge actual, regressió del bug que va donar
+  durades absurdes en processar JSONs antics).
+- `format_quality_signals` per al render terminal.
+
+### `test_app.py` — 32 tests
+
+Cobreix els helpers de l'app Streamlit (la lògica que no és UI):
+
+- `simple_md_to_html` — conversió markdown bàsica (negretes,
+  cursives, codi inline, paràgrafs, blockquotes, escape d'HTML).
+- `is_disengaged` — heurística per detectar "vacil·lar" (paraules
+  de mofa, missatges molt curts repetits).
+- `count_consecutive_stays_in_same_position` — suport per a la
+  decisió green vs yellow.
+- `determine_turn_color` — color final segons acció i context.
+- `position_label` — badge del torn segons l'estat.
 
 ## Execució
 
 ```bash
-# Cas bàsic — una passada, només verdict
-export GEMINI_API_KEY=...
-python eval_runner.py
-
-# Mesura de variància — 3 repeticions per cas
-python eval_runner.py --repeat 3
-
-# Verificar també etiquetes d'error (mode estricte)
-python eval_runner.py --check-labels
-
-# Filtrar per pas o categoria
-python eval_runner.py --filter S1            # només Pas 1
-python eval_runner.py --filter S2-TYP        # només errors típics del Pas 2
-python eval_runner.py --filter S3-CORR-02    # un cas concret
+python3 test_tutor_turn.py        # ~1s
+python3 test_simulator_state.py   # ~1s
+python3 test_app.py               # ~1s
 ```
 
-## Sortides
+Cada suite imprimeix `✓` o `✗` per test i un resum al final. Codi
+de sortida 0 si tot passa, 1 si alguna fallada.
 
-### Consola
+## Què NO cobreixen els tests
 
-Per cas: `[idx/total] id  (verdict_esperat)  ✓` o `✗` + detall.
+Aquests tests són tots aïllats: stubben Gemini i no executen la UI
+Streamlit. Per tant:
 
-Al final: resum agregat, taxa per veredicte i per pas, **llista de
-falsos positius i negatius**, matriu de confusió.
+- **No verifiquen el comportament del model.** Si Gemini decideix
+  malament en una situació concreta (per exemple: `action=stay` quan
+  el reply suggereix `advance`), els tests no ho detectaran. Aquesta
+  classe de fallada s'ha de detectar per inspecció humana de sessions
+  reals (vegeu el simulator CLI, sota).
 
-### JSON
+- **No verifiquen el render visual de Streamlit.** Els tests
+  d'`app.py` cobreixen la lògica auxiliar, no com es veu la
+  pàgina al navegador.
 
-Per defecte `eval_results_<timestamp>.json`. Conté el cas complet
-(input + expectativa) i totes les repeticions amb la resposta de la
-IA: veredicte obtingut, etiqueta, raó textual, temps. Permet auditar
-manualment qualsevol discrepància.
+## Test d'integració manual amb el model real
 
-## Falsos positius vs falsos negatius
+El simulador CLI (`simulator.py`) és l'eina per a tests d'extrem a
+extrem:
 
-El runner distingeix els dos tipus d'error perquè **no són pedagògicament
-equivalents**:
+```bash
+export GEMINI_API_KEY=...
+python3 simulator.py --debug --save sessio.json
+```
 
-- **Fals positiu** — el sistema diu *correct* quan l'esperat era
-  *typical_error* o *conceptual_gap*. **Inacceptable**: l'alumne avança
-  amb un error que ningú no ha detectat.
-- **Fals negatiu** — el sistema diu *typical_error* o *conceptual_gap*
-  quan l'esperat era *correct*. Menys greu: bloqueja l'alumne però
-  existeix `!text` per registrar discrepància.
+Després, inspeccionar el JSON desat: el bloc `quality_signals` resum
+les mètriques agregades (ràtio stay/advance, parse failures, ús de
+reforç) i `history` conté el rastre detallat torn a torn.
 
-La mètrica clau de fiabilitat a minimitzar és **el nombre absolut de
-falsos positius**, no la taxa global d'acord.
+## Eval antiga
 
-## Cost
-
-Una execució completa: ~30 crides × ~3 000 tokens ≈ 90 000 tokens.
-Amb Gemini Flash, ~0,01 € per execució. Es pot iterar lliurement.
-
-## Iteració del prompt
-
-Si veus un patró de fallades, edita el `_SYSTEM_JUDGE` a `llm.py` i
-torna a executar. El runner és intencionadament ràpid (~2 min) perquè
-sigui el bucle natural de desenvolupament del prompt.
+L'eval framework anterior (`eval_cases.py`, `eval_runner.py`,
+`eval_results_*.json`), que mesurava `judge_step` sobre 30 casos
+classificats, viu a `archive/pre-conversational/`. No s'executa al
+sistema actual.
