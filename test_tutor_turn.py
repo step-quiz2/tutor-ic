@@ -62,8 +62,8 @@ def stub(text):
 
 # Un transcript bàsic vàlid (acaba en torn 'student')
 BASIC_TRANSCRIPT = [
-    {"role": "tutor", "content": "Hola, comencem el pas 1: a què es refereix el 95%?"},
-    {"role": "student", "content": "la mitjana té probabilitat 95% de caure a l'interval"},
+    {"role": "tutor", "content": "Hola, comencem el pas 1: davant d'aquesta diferència de taxes, podem concloure que l'origen migrat causa més abandonament?"},
+    {"role": "student", "content": "doncs sí, si abandonen tant més és perquè l'origen migrat fa més difícil acabar els estudis"},
 ]
 
 
@@ -72,13 +72,14 @@ BASIC_TRANSCRIPT = [
 # -----------------------------------------------------------------------------
 print("\nTest 1 — resposta ben formada amb action=stay")
 llm._call = stub(
-    "Has dit que la mitjana 'té probabilitat de caure'. Què hauria de ser "
-    "cert sobre la mitjana perquè aquesta frase tingués sentit?\n\n"
+    "Has dit que 'l'origen migrat fa més difícil acabar els estudis'. "
+    "Però correlació i causalitat no són el mateix. Quin és el problema "
+    "de deduir causalitat d'una diferència de taxes observada?\n\n"
     "---CONTROL---\n"
     '{"action": "stay", "objectives_met": []}'
 )
 result = llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": None}, BASIC_TRANSCRIPT)
-check("reply conté text rellevant", "mitjana" in result["reply"])
+check("reply conté text rellevant", "correlació" in result["reply"])
 check("reply no conté el separador",
       llm.CONTROL_SEPARATOR not in result["reply"])
 check("reply no conté el JSON control", '"action"' not in result["reply"])
@@ -94,14 +95,14 @@ check("control_parse_ok és True", result["control_parse_ok"] is True)
 # -----------------------------------------------------------------------------
 print("\nTest 2 — action=advance amb objectiu")
 llm._call = stub(
-    "Exacte. Passem al següent pas: quin valor puntual estimaries?\n"
+    "Exacte. Passem al pas 2: quines explicacions alternatives existeixen?\n"
     "---CONTROL---\n"
-    '{"action": "advance", "objectives_met": ["95_es_procediment"]}'
+    '{"action": "advance", "objectives_met": ["correlacio_associacio_no_causalitat"]}'
 )
 result = llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": None}, BASIC_TRANSCRIPT)
 check("action és 'advance'", result["action"] == "advance")
 check("objectives_met conté l'objectiu",
-      result["objectives_met"] == ["95_es_procediment"])
+      result["objectives_met"] == ["correlacio_associacio_no_causalitat"])
 
 
 # -----------------------------------------------------------------------------
@@ -235,7 +236,7 @@ check("system_instruction passat", captured["system"] is not None)
 # Test 10: càrrega i interpolació del system prompt
 # -----------------------------------------------------------------------------
 print("\nTest 10 — càrrega i interpolació del system prompt")
-llm._system_prompt_cache = None  # invalidar cache per al test
+llm._system_prompt_cache = {}  # invalidar cache per al test (ara és dict per problem.id)
 sp = llm._load_system_prompt()
 check("PROBLEM_ENUNCIAT substituït",
       PB.PROBLEM["enunciat"] in sp)
@@ -301,13 +302,13 @@ check("marcador pas 2", "[Posició actual: Pas 2 de 3]" == m)
 m = llm._format_position_marker({"step": 3, "prereq": None})
 check("marcador pas 3", "[Posició actual: Pas 3 de 3]" == m)
 
-m = llm._format_position_marker({"step": 1, "prereq": "PRE-PARAM"})
-check("marcador reforç inclou 'PRE-PARAM activat'",
-      "PRE-PARAM activat" in m)
+m = llm._format_position_marker({"step": 1, "prereq": "PRE-CONFOUNDER"})
+check("marcador reforç inclou 'PRE-CONFOUNDER activat'",
+      "PRE-CONFOUNDER activat" in m)
 check("marcador reforç inclou 'tornaràs al Pas 1'",
       "tornaràs al Pas 1" in m)
 
-m = llm._format_position_marker({"step": 2, "prereq": "PRE-PARAM"})
+m = llm._format_position_marker({"step": 2, "prereq": "PRE-CONFOUNDER"})
 check("marcador reforç des de pas 2 té 'tornaràs al Pas 2'",
       "tornaràs al Pas 2" in m)
 
@@ -369,11 +370,11 @@ transcript_in_prereq = [
     {"role": "tutor", "content": "Opening"},
     {"role": "student", "content": "Resposta"},
 ]
-llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-PARAM"},
+llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-CONFOUNDER"},
                transcript_in_prereq)
 last_text = captured["contents"][-1]["parts"][0]["text"]
-check("marcador menciona reforç PRE-PARAM",
-      "PRE-PARAM" in last_text)
+check("marcador menciona reforç PRE-CONFOUNDER",
+      "PRE-CONFOUNDER" in last_text)
 check("marcador menciona retorn a Pas 1",
       "Pas 1" in last_text)
 check("text original preservat", "Resposta" in last_text)
@@ -395,7 +396,7 @@ last_text = captured["contents"][-1]["parts"][0]["text"]
 check("amb current_position buit, no s'afegeix marcador",
       "[Posició actual:" not in last_text)
 check("text original preservat",
-      "mitjana" in last_text)
+      "origen" in last_text)
 
 
 # -----------------------------------------------------------------------------
@@ -487,6 +488,35 @@ for i, turn in enumerate(transcript_6):
         check(f"contents[{i}] == transcript[{i}] literal",
               actual_text == expected_text,
               f"got: {actual_text!r}")
+
+
+# -----------------------------------------------------------------------------
+# Test MP — _load_system_prompt carrega el fitxer correcte per problema
+# -----------------------------------------------------------------------------
+# Multi-problema: cada problema té el seu fitxer de plantilla i les
+# substitucions s'han de fer amb el seu contingut. La cache és per
+# problem.id, així que càrregues consecutives no es trepitjen.
+print("\nTest MP — _load_system_prompt per problema")
+llm._system_prompt_cache = {}  # invalidar
+
+sp_ic = llm._load_system_prompt(PB.get("IC-001")["problem"])
+check("IC-001: enunciat substituït",
+      "interval de confiança" in sp_ic.lower())
+check("IC-001: contingut específic (μ)",
+      "μ" in sp_ic)
+
+sp_caus = llm._load_system_prompt(PB.get("CAUS-001")["problem"])
+check("CAUS-001: enunciat substituït",
+      "abandonament" in sp_caus.lower())
+check("CAUS-001: contingut específic (Idescat)",
+      "Idescat" in sp_caus)
+
+check("IC-001 i CAUS-001 produeixen prompts diferents",
+      sp_ic != sp_caus)
+
+check("cache té entrades per als dos problemes",
+      "IC-001" in llm._system_prompt_cache
+      and "CAUS-001" in llm._system_prompt_cache)
 
 
 # -----------------------------------------------------------------------------

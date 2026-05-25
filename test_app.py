@@ -221,7 +221,7 @@ check("pas 2 → 'Pas 2 de 3'",
 check("reforç → 'Reforç → Pas N'",
       app.position_label({
           "current_step": 1,
-          "active_prereq": "PRE-PARAM",
+          "active_prereq": "PRE-CONFOUNDER",
           "step_before_prereq": 1,
       }) == "Reforç → Pas 1")
 

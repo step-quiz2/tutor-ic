@@ -36,7 +36,7 @@ import simulator as S
 # =============================================================================
 
 st.set_page_config(
-    page_title="Tutor d'intervals de confiança",
+    page_title="Tutor d'estadística",
     page_icon="🎓",
     layout="centered",
 )
@@ -293,7 +293,8 @@ def position_label(state):
         return f"Reforç → Pas {state['step_before_prereq']}"
     step = state.get("current_step")
     if step:
-        total = len(PB.PROBLEM["passos"])
+        pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+        total = len(PB.PROBLEMS[pid]["problem"]["passos"])
         return f"Pas {step} de {total}"
     return None
 
@@ -391,8 +392,9 @@ def render_chat_view(state):
 
     try:
         t0 = time.time()
+        active_problem = PB.PROBLEMS[state["problem_id"]]["problem"]
         result = L.tutor_turn(
-            PB.PROBLEM,
+            active_problem,
             S.position_dict(state),
             state["transcript"],
         )
@@ -493,7 +495,7 @@ def render_summary_view(state):
 
     if qs["used_prereq"]:
         s = "s" if qs["turns_in_prereq"] != 1 else ""
-        st.markdown(f"**Reforç PRE-PARAM** — {qs['turns_in_prereq']} torn{s}")
+        st.markdown(f"**Reforç PRE-CONFOUNDER** — {qs['turns_in_prereq']} torn{s}")
         st.progress(qs["turns_in_prereq"] / max_count)
 
     st.markdown("---")
@@ -548,12 +550,57 @@ def render_summary_view(state):
 # Main
 # =============================================================================
 
+def render_picker():
+    """Pantalla inicial: l'alumne tria quin problema vol treballar.
+
+    Es mostra una sola vegada per sessió de navegador. La selecció
+    es desa a st.session_state.problem_id i a partir d'aquí la resta
+    del flux de l'app utilitza aquest id per crear la sessió i passar
+    el bundle correcte a tutor_turn.
+    """
+    st.title("Tutoria")
+    st.markdown(
+        "Tria amb quin problema vols treballar avui. Cada sessió en treballa "
+        "un de sol; per canviar de problema, recarrega la pàgina."
+    )
+    st.markdown("")
+
+    for pid, title_human in PB.list_ids():
+        bundle = PB.PROBLEMS[pid]
+        with st.container(border=True):
+            st.markdown(f"### {title_human}")
+            st.markdown(
+                f"<div style='color:#666; font-size:0.9em;'>"
+                f"<code>{pid}</code> — {bundle['problem']['tema']}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("")
+            if st.button(
+                f"Treballar aquest problema",
+                key=f"pick_{pid}",
+                use_container_width=True,
+                type="primary" if pid == PB.DEFAULT_PROBLEM_ID else "secondary",
+            ):
+                st.session_state.problem_id = pid
+                st.session_state.state = S.new_session(pid)
+                st.rerun()
+
+
 def main():
     st.markdown(CSS, unsafe_allow_html=True)
-    st.title("Tutoria (intervals de confiança)")
+
+    # Picker: si l'alumne encara no ha triat problema, mostra'l i atura.
+    if "problem_id" not in st.session_state:
+        render_picker()
+        return
+
+    problem_id = st.session_state.problem_id
+    title_human = PB.PROBLEMS[problem_id]["title_human"]
+    st.title(f"Tutoria ({title_human.lower()})")
 
     if "state" not in st.session_state:
-        st.session_state.state = S.new_session()
+        st.session_state.state = S.new_session(problem_id)
 
     state = st.session_state.state
 

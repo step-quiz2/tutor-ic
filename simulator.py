@@ -1,5 +1,5 @@
 """
-simulator.py — CLI simulator del tutor IC (arquitectura Nivell 1).
+simulator.py — CLI simulator del tutor (arquitectura Nivell 1).
 
 Permet provar el sistema des de la línia de comandes amb una clau
 Gemini real, sense Streamlit ni UI. Pensat per iterar el system prompt
@@ -7,8 +7,12 @@ amb feedback ràpid abans d'invertir en interfície gràfica.
 
 Ús bàsic:
     GEMINI_API_KEY=... python3 simulator.py
-    GEMINI_API_KEY=... python3 simulator.py --debug
+    GEMINI_API_KEY=... python3 simulator.py --problem IC-001
+    GEMINI_API_KEY=... python3 simulator.py --problem CAUS-001 --debug
     GEMINI_API_KEY=... python3 simulator.py --save sessio.json
+
+Si no s'especifica `--problem`, el simulador presenta un picker
+interactiu a l'inici amb els problemes disponibles a `PB.PROBLEMS`.
 
 Entrada de l'alumne (stdin):
     text normal     → torn de conversa
@@ -46,7 +50,18 @@ import llm as L
 # és un límit defensiu per al simulador.
 MAX_TURNS_PER_SESSION = 30
 
-PREREQ_ID = "PRE-PARAM"
+
+def _prereq_id_for(state):
+    """Retorna l'id del prerequisit del problema actiu a `state`.
+
+    Multi-problema: cada problema té el seu prereq (PRE-PARAM per a
+    IC-001, PRE-CONFOUNDER per a CAUS-001). El state guarda el
+    `problem_id` de la sessió i d'aquí en deriva el prereq. Si el
+    state no porta problem_id (estats heretats o construïts a mà
+    pels tests), tornem al problema per defecte de PB.
+    """
+    pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+    return PB.PROBLEMS[pid]["prereq_id"]
 
 # ANSI colors per llegibilitat al terminal. Desactivables amb --no-color.
 TUTOR_COLOR = "\033[36m"      # cyan
@@ -60,18 +75,28 @@ RESET = "\033[0m"
 # Estat
 # -----------------------------------------------------------------------------
 
-def new_session():
+def new_session(problem_id=None):
     """Estat inicial. El tutor obre la conversa amb una presentació +
     pregunta del Pas 1 generada per Python (sense crida LLM).
+
+    Args:
+        problem_id: id del problema (clau a PB.PROBLEMS). Si és None,
+            usa PB.DEFAULT_PROBLEM_ID (back-compat amb codi heretat).
 
     Aquesta funció no afegeix cap etiqueta "Pregunta." al contingut —
     aquesta decoració es fa al renderer (app.py per a Streamlit). El
     CLI (simulator.py) no l'afegeix; mostra el text en cru."""
+    if problem_id is None:
+        problem_id = PB.DEFAULT_PROBLEM_ID
+    bundle = PB.get(problem_id)
+    p = bundle["problem"]
+
     opening = (
-        f"{PB.PROBLEM['enunciat']}\n\n"
-        f"{PB.PROBLEM['passos'][0]['text']}"
+        f"{p['enunciat']}\n\n"
+        f"{p['passos'][0]['text']}"
     )
     return {
+        "problem_id": problem_id,
         "started_at": time.time(),
         "transcript": [{"role": "tutor", "content": opening}],
         "current_step": 1,
@@ -96,7 +121,8 @@ def apply_action(state, action):
             state["active_prereq"] = None
             state["step_before_prereq"] = None
         elif state["current_step"] is not None:
-            total = len(PB.PROBLEM["passos"])
+            pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+            total = len(PB.PROBLEMS[pid]["problem"]["passos"])
             if state["current_step"] < total:
                 state["current_step"] += 1
             else:
@@ -106,7 +132,7 @@ def apply_action(state, action):
     if action == "retreat_to_prereq":
         if state["active_prereq"] is None:
             state["step_before_prereq"] = state["current_step"]
-            state["active_prereq"] = PREREQ_ID
+            state["active_prereq"] = _prereq_id_for(state)
         # Si ja està a prereq, no-op (el model l'estaria demanant per error).
         return
 
@@ -156,7 +182,8 @@ def compute_quality_signals(state: dict) -> dict:
     # Per cada entrada del rastre, mirem on estava l'alumne ABANS de la
     # crida (position_before): aquell torn s'imputa allà. Així, un torn
     # que avança del pas 2 al pas 3 compta com a "torn al pas 2".
-    total_steps = len(PB.PROBLEM["passos"])
+    pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+    total_steps = len(PB.PROBLEMS[pid]["problem"]["passos"])
     turns_per_step = {n: 0 for n in range(1, total_steps + 1)}
     turns_in_prereq = 0
     for e in history:
@@ -253,7 +280,9 @@ def position_summary(state):
         return (f"reforç {state['active_prereq']} "
                 f"(tornarà a pas {state['step_before_prereq']})")
     if state["current_step"]:
-        return f"pas {state['current_step']} de {len(PB.PROBLEM['passos'])}"
+        pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+        total = len(PB.PROBLEMS[pid]["problem"]["passos"])
+        return f"pas {state['current_step']} de {total}"
     return "indefinit"
 
 
@@ -343,18 +372,70 @@ def handle_local_command(state, raw, disp, debug_mode_ref):
 
 
 # -----------------------------------------------------------------------------
+# Picker de problema
+# -----------------------------------------------------------------------------
+
+def pick_problem_interactive(disp=None):
+    """Pregunta a l'usuari quin problema vol treballar.
+
+    Mostra la llista de PB.PROBLEMS i accepta:
+      - un índex numèric (1, 2, ...)
+      - un id literal (IC-001, CAUS-001)
+
+    Retorna el problem_id triat. Si l'usuari prem Enter sense escriure
+    res, retorna PB.DEFAULT_PROBLEM_ID.
+    """
+    options = PB.list_ids()
+    print()
+    print("Problemes disponibles:")
+    for i, (pid, title) in enumerate(options, 1):
+        marker = "  (default)" if pid == PB.DEFAULT_PROBLEM_ID else ""
+        print(f"  {i}) {pid:10s} — {title}{marker}")
+    print()
+
+    while True:
+        choice = input(
+            f"Tria un problema [1-{len(options)}, "
+            f"o Enter per defecte={PB.DEFAULT_PROBLEM_ID}]: "
+        ).strip()
+        if not choice:
+            return PB.DEFAULT_PROBLEM_ID
+        # Per índex
+        if choice.isdigit():
+            n = int(choice)
+            if 1 <= n <= len(options):
+                return options[n - 1][0]
+        # Per id literal (case-insensitive)
+        for pid, _ in options:
+            if choice.upper() == pid.upper():
+                return pid
+        print(f"  No reconec '{choice}'. Prova de nou.")
+
+
+# -----------------------------------------------------------------------------
 # Loop principal
 # -----------------------------------------------------------------------------
 
-def run_session(debug_mode=False, save_path=None, use_color=True):
+def run_session(debug_mode=False, save_path=None, use_color=True,
+                problem_id=None):
     disp = Display(use_color=use_color)
     debug_mode_ref = [debug_mode]
-    state = new_session()
+
+    if problem_id is None:
+        problem_id = pick_problem_interactive(disp)
+    elif problem_id not in PB.PROBLEMS:
+        print(f"Error: problema desconegut '{problem_id}'. "
+              f"Disponibles: {sorted(PB.PROBLEMS)}", file=sys.stderr)
+        sys.exit(2)
+
+    state = new_session(problem_id)
 
     disp.meta(f"=== Sessió iniciada — "
               f"{datetime.now().isoformat(timespec='seconds')} ===")
+    disp.meta(f"Problema: {problem_id} — "
+              f"{PB.PROBLEMS[problem_id]['title_human']}")
     disp.meta(f"Estat inicial: {position_summary(state)}")
-    disp.meta(f"Model: {L.MODEL} | Prompt: tutor_system_{L.PROMPT_VERSION}.md")
+    disp.meta(f"Model: {L.MODEL} | Prompt: tutor_system_{L.PROMPT_VERSION}_{problem_id}.md")
     disp.meta("Escriu /help per veure les comandes.")
     disp.tutor(state["transcript"][0]["content"])
 
@@ -411,7 +492,8 @@ def run_session(debug_mode=False, save_path=None, use_color=True):
         try:
             disp.meta(f"[cridant... posició: {position_summary(state)}]")
             t0 = time.time()
-            result = L.tutor_turn(PB.PROBLEM, position_dict(state),
+            active_problem = PB.PROBLEMS[state["problem_id"]]["problem"]
+            result = L.tutor_turn(active_problem, position_dict(state),
                                   state["transcript"])
             elapsed = time.time() - t0
         except Exception as e:
@@ -507,15 +589,23 @@ def position_summary_from(pos):
 
 def main():
     p = argparse.ArgumentParser(
-        description="CLI simulator del tutor IC (Nivell 1)",
+        description="CLI simulator del tutor (Nivell 1)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Exemples:\n"
             "  GEMINI_API_KEY=... python3 simulator.py\n"
-            "  GEMINI_API_KEY=... python3 simulator.py --debug\n"
+            "  GEMINI_API_KEY=... python3 simulator.py --problem IC-001\n"
+            "  GEMINI_API_KEY=... python3 simulator.py --problem CAUS-001 --debug\n"
             "  GEMINI_API_KEY=... python3 simulator.py --save sessio.json\n"
+            "\n"
+            "Problemes disponibles: IC-001, CAUS-001 "
+            f"(default: {PB.DEFAULT_PROBLEM_ID})\n"
+            "Sense --problem, el simulador mostra un picker interactiu.\n"
         ),
     )
+    p.add_argument("--problem", metavar="ID",
+                   choices=sorted(PB.PROBLEMS),
+                   help="id del problema a treballar (sense flag: picker interactiu)")
     p.add_argument("--debug", action="store_true",
                    help="mostra action, parse_ok i temps a cada torn")
     p.add_argument("--save", metavar="FILE",
@@ -534,6 +624,7 @@ def main():
             debug_mode=args.debug,
             save_path=args.save,
             use_color=not args.no_color,
+            problem_id=args.problem,
         )
     except KeyboardInterrupt:
         print()

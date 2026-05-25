@@ -98,40 +98,51 @@ def _get_client():
 # Carrega i parametrització del system prompt
 # -----------------------------------------------------------------------------
 
-_system_prompt_cache = None
+# Cache del system prompt per problem.id. Es construeix la primera
+# vegada que es demana un problema concret i es reutilitza la resta
+# del procés. Suport multi-problema: cada problema té el seu fitxer
+# de plantilla (tutor_system_<version>_<problem_id>.md) i les seves
+# pròpies substitucions de placeholders.
+_system_prompt_cache: dict[str, str] = {}
 
 
-def _load_system_prompt() -> str:
-    """Carrega el system prompt per al problema actual des de
-    `prompts/tutor_system_<version>.md` i substitueix els placeholders
-    `{{...}}` amb dades de `problem.py`.
+def _load_system_prompt(problem: dict = None) -> str:
+    """Carrega el system prompt per al `problem` donat des de
+    `prompts/tutor_system_<version>_<problem_id>.md` i substitueix els
+    placeholders `{{...}}` amb dades del problema.
 
-    El resultat es cacheja a nivell de mòdul perquè el prompt és estable
-    durant tota una execució del procés (les dades del problema no
-    canvien en runtime). Si en el futur volem suport multi-problema,
-    aquesta cache haurà de ser per problem.id.
+    Args:
+        problem: bundle d'un problema (com els que conté `PB.PROBLEMS`,
+            i.e. el dict que té id/tema/enunciat/passos). Si és None,
+            usa `PB.PROBLEM` (el problema per defecte) per back-compat.
+
+    El resultat es cacheja per `problem["id"]`. Un mateix procés pot
+    servir múltiples problemes (un per sessió); cada un carrega el seu
+    prompt un sol cop.
     """
-    global _system_prompt_cache
-    if _system_prompt_cache is not None:
-        return _system_prompt_cache
+    if problem is None:
+        problem = PB.PROBLEM
 
-    template_path = PROMPTS_DIR / f"tutor_system_{PROMPT_VERSION}.md"
+    problem_id = problem["id"]
+    if problem_id in _system_prompt_cache:
+        return _system_prompt_cache[problem_id]
+
+    template_path = PROMPTS_DIR / f"tutor_system_{PROMPT_VERSION}_{problem_id}.md"
     template = template_path.read_text(encoding="utf-8")
 
-    p = PB.PROBLEM
-    passos = p["passos"]
+    passos = problem["passos"]
     if len(passos) != 3:
         raise RuntimeError(
             f"El system prompt v1 espera exactament 3 passos al "
-            f"problema, però n'hi ha {len(passos)}. Cal regenerar el "
-            f"prompt o adaptar `_load_system_prompt`."
+            f"problema {problem_id}, però n'hi ha {len(passos)}. Cal "
+            f"regenerar el prompt o adaptar `_load_system_prompt`."
         )
 
     # Substitució literal. Sintaxi {{PLACEHOLDER}} triada per no entrar
     # en conflicte amb els fragments JSON literals que conté el prompt
     # (per exemple `{"action": "stay"}` als exemples de format).
     replacements = {
-        "{{PROBLEM_ENUNCIAT}}":    p["enunciat"],
+        "{{PROBLEM_ENUNCIAT}}":    problem["enunciat"],
         "{{STEP1_TEXT}}":          passos[0]["text"],
         "{{STEP1_EXPECTED}}":      passos[0]["expected_summary"],
         "{{STEP1_TYPICAL_ERROR}}": passos[0]["typical_error"],
@@ -150,11 +161,11 @@ def _load_system_prompt() -> str:
     unresolved = re.findall(r"\{\{[A-Z_0-9]+\}\}", template)
     if unresolved:
         raise RuntimeError(
-            f"Placeholders no resolts al system prompt: {unresolved}. "
-            f"Cal afegir-los a la taula de substitucions."
+            f"Placeholders no resolts al system prompt {problem_id}: "
+            f"{unresolved}. Cal afegir-los a la taula de substitucions."
         )
 
-    _system_prompt_cache = template
+    _system_prompt_cache[problem_id] = template
     return template
 
 
@@ -167,16 +178,27 @@ def _is_retriable(err: Exception) -> bool:
     return any(p in msg for p in RETRY_PATTERNS)
 
 
-def _format_position_marker(current_position: dict) -> str:
+def _format_position_marker(current_position: dict,
+                            total_steps: int = None) -> str:
     """Construeix la línia de marcador de posició que s'antepondrà al
     darrer missatge user. El system prompt v1.1 documenta aquest
     format i instrueix el model a respectar-lo com a font de veritat
     sobre on és la sessió.
 
     Format:
-      [Posició actual: Pas N de TOTAL]                      — pas normal
-      [Posició actual: reforç PRE-PARAM activat (tornaràs al Pas N
-                       en acabar)]                          — en reforç
+      [Posició actual: Pas N de TOTAL]                       — pas normal
+      [Posició actual: reforç <PREREQ_ID> activat (tornaràs
+                       al Pas N en acabar)]                  — en reforç
+
+    El `<PREREQ_ID>` es prengut directament de `current_position["prereq"]`
+    (per exemple "PRE-PARAM" per a IC-001 o "PRE-CONFOUNDER" per a CAUS-001).
+
+    Args:
+        current_position: {"step": int|None, "prereq": str|None}.
+        total_steps: nombre total de passos del problema actiu. Si és
+            None, es deriva de `PB.PROBLEM` (back-compat). En contextos
+            multi-problema, el caller (tutor_turn) ha de passar-lo
+            explícitament a partir del seu paràmetre `problem`.
 
     Si no podem determinar la posició (current_position buit o sense
     camps reconeixibles), retornem cadena buida — el model continua
@@ -195,8 +217,9 @@ def _format_position_marker(current_position: dict) -> str:
         return f"[Posició actual: reforç {prereq} activat]"
 
     if step is not None:
-        total = len(PB.PROBLEM["passos"])
-        return f"[Posició actual: Pas {step} de {total}]"
+        if total_steps is None:
+            total_steps = len(PB.PROBLEM["passos"])
+        return f"[Posició actual: Pas {step} de {total_steps}]"
 
     return ""
 
@@ -301,8 +324,12 @@ def tutor_turn(problem: dict, current_position: dict,
     Una crida al model per al pròxim torn del tutor.
 
     Args:
-        problem: PB.PROBLEM. Es passa explícitament per facilitar tests
-            i una eventual extensió multi-problema.
+        problem: bundle d'un problema (com els que retorna
+            `PB.get(problem_id)["problem"]`, i.e. el dict que té
+            id/tema/enunciat/passos). En entorns multi-problema, el
+            caller ha de triar quin problema treballar per a la
+            sessió i passar-ne el bundle aquí; el system prompt i el
+            marcador de posició se'n deriven.
         current_position: {"step": int|None, "prereq": str|None}. En
             aquesta versió no es renderitza explícitament al prompt
             (el model dedueix la posició de la conversa). Es manté com a
@@ -359,7 +386,7 @@ def tutor_turn(problem: dict, current_position: dict,
                 f"tutor al transcript després de cada crida."
             )
 
-    system_instruction = _load_system_prompt()
+    system_instruction = _load_system_prompt(problem)
 
     # Construïm el multi-turn contents: cada torn del transcript és un
     # missatge propi. Els torns "tutor" són role="model" (passem només
@@ -373,7 +400,10 @@ def tutor_turn(problem: dict, current_position: dict,
     # model perd la pista de l'estructura del currículum a mesura que
     # la conversa avança (bug observat a les sessions Alumne 1, 2 amb
     # el prompt v1).
-    position_marker = _format_position_marker(current_position)
+    position_marker = _format_position_marker(
+        current_position,
+        total_steps=len(problem["passos"]),
+    )
     last_user_idx = len(transcript) - 1  # garantit > 0 per invariants
 
     contents = []

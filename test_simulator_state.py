@@ -106,8 +106,8 @@ check("finished és True", state["finished"] is True)
 print("\nTest 6 — retreat_to_prereq des de pas 1")
 state = S.new_session()
 S.apply_action(state, "retreat_to_prereq")
-check("active_prereq ara és PRE-PARAM",
-      state["active_prereq"] == S.PREREQ_ID)
+check("active_prereq ara és PRE-CONFOUNDER",
+      state["active_prereq"] == "PRE-CONFOUNDER")
 check("step_before_prereq guardat com a 1",
       state["step_before_prereq"] == 1)
 check("current_step preservat", state["current_step"] == 1)
@@ -132,7 +132,7 @@ state = S.new_session()
 state["current_step"] = 2
 S.apply_action(state, "retreat_to_prereq")
 check("primer setup correcte: a prereq, ve de pas 2",
-      state["active_prereq"] == S.PREREQ_ID and state["step_before_prereq"] == 2)
+      state["active_prereq"] == "PRE-CONFOUNDER" and state["step_before_prereq"] == 2)
 S.apply_action(state, "advance")
 check("active_prereq tornat a None", state["active_prereq"] is None)
 check("step_before_prereq netejat", state["step_before_prereq"] is None)
@@ -150,7 +150,7 @@ saved_step = state["step_before_prereq"]
 S.apply_action(state, "retreat_to_prereq")  # no-op
 check("step_before_prereq no s'ha sobreescrit",
       state["step_before_prereq"] == saved_step)
-check("active_prereq segueix actiu", state["active_prereq"] == S.PREREQ_ID)
+check("active_prereq segueix actiu", state["active_prereq"] == "PRE-CONFOUNDER")
 
 
 # -----------------------------------------------------------------------------
@@ -165,8 +165,8 @@ check("position_dict: step=1, prereq=None",
 state_p = S.new_session()
 S.apply_action(state_p, "retreat_to_prereq")
 pd_p = S.position_dict(state_p)
-check("position_dict en prereq: prereq=PRE-PARAM",
-      pd_p["prereq"] == "PRE-PARAM")
+check("position_dict en prereq: prereq=PRE-CONFOUNDER",
+      pd_p["prereq"] == "PRE-CONFOUNDER")
 
 ps = S.position_summary(state)
 check("position_summary inclou 'pas 1'", "pas 1" in ps)
@@ -185,7 +185,7 @@ check("position_summary quan finished",
 print("\nTest 11 — position_summary_from amb dicts aïllats")
 ps = S.position_summary_from({"step": 2, "prereq": None})
 check("pas 2 al text", "pas 2" in ps)
-ps = S.position_summary_from({"step": 2, "prereq": "PRE-PARAM"})
+ps = S.position_summary_from({"step": 2, "prereq": "PRE-CONFOUNDER"})
 check("reforç prioritzat sobre pas", "reforç" in ps)
 
 
@@ -301,17 +301,17 @@ state["history"] = [
     {"turn": 3, "student_msg": "Resp 3", "action": "retreat_to_prereq",
      "objectives_met": [], "control_parse_ok": True,
      "position_before": {"step": 1, "prereq": None},
-     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_after": {"step": 1, "prereq": "PRE-CONFOUNDER"},
      "elapsed_seconds": 2.0},
     # 2 torns dins reforç
     {"turn": 4, "student_msg": "(L'alumne demana una pista)",  # pista!
      "action": "stay", "objectives_met": [], "control_parse_ok": True,
-     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
-     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_before": {"step": 1, "prereq": "PRE-CONFOUNDER"},
+     "position_after": {"step": 1, "prereq": "PRE-CONFOUNDER"},
      "elapsed_seconds": 1.5},
     {"turn": 5, "student_msg": "Resp 5", "action": "advance",
      "objectives_met": [], "control_parse_ok": True,
-     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_before": {"step": 1, "prereq": "PRE-CONFOUNDER"},
      "position_after": {"step": 1, "prereq": None},
      "elapsed_seconds": 1.0},
     # Avancen fins finalitzar
@@ -408,6 +408,60 @@ qs2 = S.compute_quality_signals(state)
 check("sense ts → suma d'elapsed_seconds",
       qs2["elapsed_seconds_total"] == 4.0,
       f"got {qs2['elapsed_seconds_total']}")
+
+
+# =============================================================================
+# Tests multi-problema (afegits amb el picker de problema)
+# =============================================================================
+
+print("\nTest MP1 — el registry té els dos problemes esperats")
+check("IC-001 al registry", "IC-001" in PB.PROBLEMS)
+check("CAUS-001 al registry", "CAUS-001" in PB.PROBLEMS)
+check("PB.list_ids() retorna les dues entrades",
+      len(PB.list_ids()) == 2)
+
+print("\nTest MP2 — PB.get() retorna bundles ben formats")
+for _pid in ("IC-001", "CAUS-001"):
+    bundle = PB.get(_pid)
+    check(f"{_pid}: id correcte", bundle["id"] == _pid)
+    check(f"{_pid}: té 3 passos",
+          len(bundle["problem"]["passos"]) == 3)
+    check(f"{_pid}: prereq_id existeix a prerequisites",
+          bundle["prereq_id"] in bundle["prerequisites"])
+
+print("\nTest MP3 — PB.get() amb id desconegut llança KeyError")
+try:
+    PB.get("UNKNOWN-999")
+    check("KeyError llançat", False, "no s'ha llançat excepció")
+except KeyError:
+    check("KeyError llançat amb id desconegut", True)
+
+print("\nTest MP4 — new_session amb problem_id concret crea estat coherent")
+state_ic = S.new_session("IC-001")
+check("IC-001: problem_id desat a l'estat",
+      state_ic["problem_id"] == "IC-001")
+check("IC-001: enunciat IC al transcript[0]",
+      "interval de confiança" in state_ic["transcript"][0]["content"].lower())
+state_caus = S.new_session("CAUS-001")
+check("CAUS-001: problem_id desat a l'estat",
+      state_caus["problem_id"] == "CAUS-001")
+check("CAUS-001: enunciat CAUS al transcript[0]",
+      "abandonament" in state_caus["transcript"][0]["content"].lower())
+
+print("\nTest MP5 — retreat_to_prereq usa el prereq del problema actiu")
+state_ic = S.new_session("IC-001")
+S.apply_action(state_ic, "retreat_to_prereq")
+check("IC-001: active_prereq == PRE-PARAM",
+      state_ic["active_prereq"] == "PRE-PARAM")
+state_caus = S.new_session("CAUS-001")
+S.apply_action(state_caus, "retreat_to_prereq")
+check("CAUS-001: active_prereq == PRE-CONFOUNDER",
+      state_caus["active_prereq"] == "PRE-CONFOUNDER")
+
+print("\nTest MP6 — new_session() sense args usa DEFAULT_PROBLEM_ID")
+state_default = S.new_session()
+check("problem_id == DEFAULT_PROBLEM_ID",
+      state_default["problem_id"] == PB.DEFAULT_PROBLEM_ID)
 
 
 # -----------------------------------------------------------------------------

@@ -4,6 +4,174 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-05-25 — CAUS-001: nou contingut (origen migrat i AEP, dades Idescat/Bofill)
+
+Substitució del contingut pedagògic del bundle CAUS-001 dins del
+registry de problemes. L'arquitectura multi-problema no canvia; el
+reforç (PRE-CONFOUNDER, sol/begudes fredes) no canvia; només es
+reescriu el problema principal. IC-001 segueix intacte.
+
+**Nou contingut del problema:** lectura crítica de la diferència de
+taxes d'**abandonament escolar prematur** entre joves de 18-24 anys
+a Catalunya, segons dades de l'**Idescat** (Enquesta de Població
+Activa, 2022-2023): 34,2% entre joves de nacionalitat estrangera
+vs 10,1% entre joves nascuts a Catalunya, una ràtio de més de 3×.
+
+**Motivació pedagògica:** l'error típic ("l'origen migrat causa
+l'abandonament") és real, alimenta discursos d'odi documentats, i
+té conseqüències directes a l'aula. Desmuntar-lo amb la maquinària
+de variable confusora és exactament l'aplicació socialment útil del
+mètode. La literatura (Fundació Bofill, Centre d'Estudis Demogràfics,
+estudis de Bayona/UB i Serra/UdG) ofereix tant el feix de confusores
+estructurals (nivell socioeconòmic, educació dels pares —fins a 5×
+més AEP entre joves amb pares amb estudis baixos—, segregació
+escolar, llengua, racisme institucional) com evidència
+quasi-experimental que neutralitza la lectura causal (fills
+d'estrangers nascuts a Catalunya: 21,2% no acaben ESO; arribats
+abans dels 7 anys: 21,7% — taxes pràcticament idèntiques entre dos
+grups del mateix origen amb trajectòries escolars diferents).
+
+**Adaptació del llenguatge:** el problema anterior usava una
+correlació de Pearson (r = 0,60); aquest usa una diferència de
+taxes entre grups. Pedagògicament idèntic ("associació observada
+≠ causa"), però el vocabulari concret canvia.
+
+### Canvis a fitxers
+
+- **`problem.py`**: el bundle `_CAUS001_PROBLEM` reescrit
+  íntegrament (enunciat, 3 passos amb expected_summary i typical_error
+  nous). Descripcions del `_CAUS001_ERROR_CATALOG` generalitzades
+  per no referir-se específicament a "r alta" o "causalitat inversa
+  oblidada" (errors del problema anterior). IC-001 intacte.
+- **`prompts/tutor_system_v1.2_CAUS-001.md`**: reescriptura de totes
+  les Situacions A-E amb el nou tema (la causalitat inversa, que era
+  l'alternativa dominant al problema anterior, aquí no s'aplica i no
+  apareix als exemples; la variable confusora estructural pren el
+  seu lloc). Secció "Quan retrocedir al reforç" amb senyals i exemples
+  actualitzats. Exemples genèrics de "comprensió encarnada" i
+  "vocabulari tècnic" actualitzats. Secció "El reforç" intacta
+  (sol/begudes fredes inalterats). Situació F intacta.
+- **`test_tutor_turn.py`**: `BASIC_TRANSCRIPT` actualitzat al nou tema.
+  Assertion del Test 16 (`"música" in last_text`) actualitzada a
+  `"origen" in last_text`. Test MP de càrrega de prompt per problema
+  ara comprova `"abandonament"` i `"Idescat"` en lloc de
+  `"corredors"` i `"BPM"`.
+- **`test_simulator_state.py`**: Test MP4 (new_session amb problem_id
+  concret) ara comprova `"abandonament"` al transcript[0] de CAUS-001
+  en lloc de `"corredors"`.
+- **`README.md`**: secció "Demo CAUS-001" reescrita: nou paràgraf
+  introductori amb la motivació pedagògica i les fonts; Sessió A i
+  Sessió B amb respostes adaptades al nou tema. Bullet de
+  característiques actualitzat per mencionar les fonts (Idescat,
+  Fundació Bofill).
+
+### Verificació
+
+195/195 tests verds (77 + 86 + 32). Cap canvi a l'arquitectura del
+state machine, llm.py, simulator.py o app.py.
+
+## 2026-05-25 — Multi-problema: picker IC-001 / CAUS-001 + verificació de la migració anterior
+
+L'alumne pot triar a l'inici de la sessió quin problema vol treballar:
+**IC-001** (interval de confiança, antic) o **CAUS-001** (correlació
+vs. causalitat, recent). La selecció és per sessió; per canviar de
+problema cal recarregar la pàgina (UI Streamlit) o re-executar el
+simulador (CLI).
+
+### Refactor multi-problema
+
+- **`problem.py`** ja no és single-problem. Exposa un `PROBLEMS`
+  registry indexat per id (IC-001, CAUS-001) on cada entrada conté
+  el bundle complet (`problem`, `prerequisites`, `dependencies`,
+  `error_catalog`, `prereq_id`, `title_human`). Funcions noves:
+  `get(problem_id)` i `list_ids()`. Els noms globals heretats
+  (`PROBLEM`, `PREREQUISITES`, etc.) segueixen existint apuntant al
+  problema per defecte (`DEFAULT_PROBLEM_ID = "CAUS-001"`) només per
+  back-compat amb tests heretats. Assercions d'integritat al càrrega
+  del mòdul detecten errors d'esquema a la base de dades pedagògica.
+- **`llm.py::_load_system_prompt(problem)`** ara accepta el problema
+  com a paràmetre i carrega el fitxer corresponent
+  (`prompts/tutor_system_<version>_<problem_id>.md`). La cache passa
+  de variable única a dict per `problem["id"]`. `tutor_turn` passa el
+  seu paràmetre `problem` a `_load_system_prompt` (abans s'ignorava
+  i sempre s'usava `PB.PROBLEM`).
+- **`llm.py::_format_position_marker`** accepta `total_steps` com a
+  paràmetre. `tutor_turn` el calcula de `problem["passos"]` i el
+  passa explícitament; el fallback a `PB.PROBLEM` només es manté per
+  back-compat amb tests existents que criden la funció sense passar
+  total_steps.
+- **`simulator.py`**: nova funció `pick_problem_interactive()` que
+  presenta la llista i accepta tant índex com id literal. `run_session`
+  i `new_session` accepten `problem_id`. La constant `PREREQ_ID` es
+  reemplaça per `_prereq_id_for(state)`, que llegeix del state. Flag
+  CLI `--problem ID` per saltar el picker.
+- **`app.py`**: pantalla inicial `render_picker()` amb una targeta per
+  problema (botó "Treballar aquest problema"). El títol de la pàgina
+  esdevé dinàmic després de la selecció. `tutor_turn` rep el bundle
+  del problema actiu, no `PB.PROBLEM`.
+- **Prompts**: el fitxer únic `tutor_system_v1.2.md` es divideix en
+  `tutor_system_v1.2_IC-001.md` i `tutor_system_v1.2_CAUS-001.md`.
+  Cada un té els exemples (Situacions A-F, secció "El reforç",
+  exemples de retreat) adaptats al seu tema.
+- **Tests**: 6 tests nous a `test_simulator_state.py` (registry,
+  bundles, KeyError, new_session multi-problema, retreat amb prereq
+  correcte per problema) i 1 a `test_tutor_turn.py` (càrrega de
+  prompt per problema). Total: 77 + 86 + 32 = **195 tests**, tots
+  verds.
+
+### Reparació dels quatre defectes detectats a la verificació de Fase 3
+
+- **`app.py`** línies 39 i 553: `page_title` i `st.title` segueixen
+  amb "intervals de confiança" → `page_title` ara és genèric ("Tutor
+  d'estadística"); el `st.title` esdevé dinàmic en funció del problema
+  triat (`"Tutoria ({title_human})"`).
+- **`test_tutor_turn.py`** línia 399: assertion residual
+  `"mitjana" in last_text` que pertanyia al `BASIC_TRANSCRIPT`
+  d'IC-001 → reemplaçada per `"música" in last_text`. La fixture ja
+  s'havia migrat correctament; només faltava l'assertion.
+- **`prompts/tutor_system_v1.2.md`** línia 273: exemple il·lustratiu
+  rovellat ("Si l'alumne ja ha entès que el 95% és sobre el
+  procediment...") → reescrit per al tema correlació-causalitat al
+  fitxer `_CAUS-001.md`. El fitxer `_IC-001.md` conserva l'exemple
+  original (que pertoca al seu tema).
+- **`llm.py`** línia 178: exemple del format del marcador a un
+  docstring esmentava literalment `PRE-PARAM` → generalitzat a
+  `<PREREQ_ID>` amb nota explicativa que cada problema en té un
+  diferent.
+
+## 2026-05-25 — Intercanvi de tema: IC-001 → CAUS-001
+
+Substitució completa del contingut pedagògic del tutor. L'arquitectura
+(màquina d'estats, crida per torn, control block JSON, quality signals,
+UI Streamlit) no canvia. Canvis de contingut purs:
+
+- **`problem.py`** (Agent B): nou `PROBLEM` amb id `CAUS-001`,
+  enunciat dels 150 corredors amb r = 0,60 entre BPM de música i
+  velocitat de cursa. Tres passos socràtics sobre correlació vs.
+  causalitat (Pas 1: per què r no implica causalitat; Pas 2: tres
+  alternatives — causalitat inversa, variable confusora, atzar mostral;
+  Pas 3: quin disseny experimental permetria defensar la causalitat).
+  Nou prerequisit `PRE-CONFOUNDER` (escenari: hores de sol i vendes
+  de begudes fredes en un poble de la costa). Nou `ERROR_CATALOG` amb
+  etiquetes `CAUS_direct` i `CAUS_no_alternatives`. Nova entrada
+  `confounding_variable` a `DEPENDENCIES`.
+- **`simulator.py`** (Agent C): cap canvi de lògica; actualitzades
+  referències literals a `PRE-PARAM` → `PRE-CONFOUNDER` si n'hi havia.
+- **`prompts/tutor_system_v1.2.md`** (Agent D): secció `## El reforç`
+  renomenada de `PRE-PARAM` a `PRE-CONFOUNDER`; pregunta del reforç
+  substituïda per l'escenari sol/begudes fredes; exemples de
+  `retreat_to_prereq` actualitzats a la nova confusió causal.
+- **`app.py`** (Agent E): etiqueta `**Reforç PRE-PARAM**` →
+  `**Reforç PRE-CONFOUNDER**` (una sola línia).
+- **`test_tutor_turn.py`, `test_simulator_state.py`, `test_app.py`**
+  (Agent F): assertions sobre contingut antic (`IC-001`, `PRE-PARAM`,
+  literals d'intervals) actualitzades al nou tema; tokens opacs
+  renomenats per claredat.
+- **`README.md`, `CHANGELOG.md`** (Agent G): secció "Demo planificada"
+  reescrita amb respostes de Sessió A i Sessió B per a CAUS-001;
+  bullet de característiques actualitzat (`IC-001` → `CAUS-001`,
+  `PRE-PARAM` → `PRE-CONFOUNDER`).
+
 ## 2026-05-24 — Pas 3b-bis: presentació separada de la lògica
 
 - L'etiqueta visual "Pregunta." es passa al renderer (app.py
