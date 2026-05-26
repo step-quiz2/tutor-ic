@@ -56,7 +56,7 @@ RETRY_PATTERNS = ("503", "UNAVAILABLE", "RESOURCE_EXHAUSTED",
 # es manifesta com `control_parse_ok=False` + reply truncada a la
 # meitat. 1500 dóna marge generós tant per al pensament com per al
 # text final i tanca aquesta classe de fallada.
-MAX_OUTPUT_TOKENS = 1500
+MAX_OUTPUT_TOKENS = 8000
 
 # Temperatura: la conversa pedagògica necessita una mica de
 # variabilitat per no sonar robotitzada. 0.4 és el mateix valor que
