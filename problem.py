@@ -87,22 +87,16 @@ _IC001_PROBLEM = {
     "id": "IC-001",
     "tema": "Interpretació d'un interval de confiança",
     "enunciat": (
-        "Context. Has fet una recerca per estimar quantes hores al "
-        "dia estudien els estudiants de primer curs durant l'època "
-        "d'exàmens. La població d'interès són els ~250 estudiants "
-        "de primer de la teva facultat.\n\n"
-        "Has pres una mostra aleatòria de 44 estudiants i has "
-        "obtingut:\n\n"
+        "S'ha fet una recerca per estimar quantes hores al dia "
+        "estudien, durant l'època d'exàmens, els estudiants de "
+        "primer curs d'un Grau universitari. La població d'interès "
+        "són aproximadament 250 estudiants.\n\n"
+        "A partir d'una mostra aleatòria de 44 estudiants obtenim:\n\n"
         "  - Mitjana mostral: x̄ = 4,0 hores/dia\n"
         "  - Desviació estàndard estimada: σ ≈ 2,7 hores\n\n"
-        "El càlcul. Aplicant la fórmula del marge d'error al 95% de "
-        "confiança, amb z* = 1,96 (valor crític de la normal "
-        "estàndard per al 95%):\n\n"
-        "  E = z* · σ/√n = 1,96 · 2,7/√44 ≈ 0,80 hores\n\n"
-        "L'interval de confiança per a la mitjana μ d'hores d'estudi "
-        "diari és:\n\n"
-        "  IC₉₅% = [x̄ − E ; x̄ + E] = [3,2 ; 4,8] hores/dia\n\n"
-        "Interpretarem aquest interval pas a pas."
+        "A partir d'aquestes dades s'obté un interval de confiança "
+        "per a la mitjana μ d'hores d'estudi diari:\n\n"
+        "  [3,2 ; 4,8] hores/dia"
     ),
     "dependencies": ["param_vs_stat"],
     "passos": [
@@ -111,10 +105,11 @@ _IC001_PROBLEM = {
             "text": (
                 "El nivell de confiança del 95% que apareix a "
                 "l'enunciat fa referència a una probabilitat. "
-                "Probabilitat sobre què?\n\n"
-                "Sobre les hores d'estudi reals dels estudiants? "
-                "Sobre la nostra estimació mostral x̄ = 4,0? Sobre "
-                "l'interval [3,2 ; 4,8] que hem construït?"
+                "Explica sobre què fa referència aquesta "
+                "probabilitat: creus que és sobre les hores d'estudi "
+                "reals dels estudiants, sobre la nostra estimació "
+                "mostral x̄ = 4,0, o potser sobre l'interval "
+                "[3,2 ; 4,8] que hem construït, o una altra opció?"
             ),
             "expected_summary": (
                 "El 95% és una propietat del procediment: si "

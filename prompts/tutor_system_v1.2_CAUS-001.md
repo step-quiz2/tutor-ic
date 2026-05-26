@@ -317,6 +317,23 @@ calculades), i la simplificació binària renda baixa/alta subestima
 cada contribució. La suma ~33% és consistent amb un escenari on hi ha
 més confusores i/o un eventual efecte propi de l'origen.
 
+**Com escriure les fórmules.** Quan hagis d'escriure una mitjana
+ponderada o qualsevol altra operació aritmètica, fes servir notació
+compacta amb números, no descripcions verbals amb noms llargs.
+
+❌ MALAMENT (verbal, llarg, difícil de seguir):
+> AEP esperada nadius = (Percentatge de nadius amb renda baixa ×
+> AEP de renda baixa) + (Percentatge de nadius amb renda alta ×
+> AEP de renda alta)
+
+✅ BÉ (compacte, amb els números directament i una etiqueta curta):
+> AEP esperada nadius = 0,134 × 19,4 + 0,866 × 1,9 ≈ 4,25
+
+Si vols nomenar les variables, fes-ho una sola vegada abans del càlcul
+i després utilitza només els números. Mai posis cinc paraules
+catalanes dins d'una multiplicació. La fórmula s'ha de poder llegir
+d'un cop d'ull i comprovar amb la calculadora.
+
 ---
 
 ## Com escriure cada resposta
