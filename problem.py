@@ -125,6 +125,19 @@ _IC001_PROBLEM = {
             ),
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
+            "canonical_question": (
+                "El nivell de confiança del 95% fa referència a una "
+                "probabilitat. Sobre què recau aquesta probabilitat: "
+                "sobre les hores reals dels estudiants, sobre x̄ = 4,0, "
+                "o sobre l'interval [3,2 ; 4,8] que hem construït?"
+            ),
+            "pistes": [
+                "Pensa en QUÈ varia i QUÈ és fix. La mostra (i l'interval "
+                "que en surt) canviaria si repetíssim l'estudi; μ no.",
+                "El 95% és una propietat del *procediment*: de tots els "
+                "intervals que construiríem repetint el mostreig, el 95% "
+                "contindrien μ. No és una afirmació sobre μ.",
+            ],
         },
         {
             "id": 2,
@@ -149,6 +162,17 @@ _IC001_PROBLEM = {
             ),
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
+            "canonical_question": (
+                "Un company afirma: «la probabilitat que μ estigui entre "
+                "3,2 i 4,8 és del 95%». Per què aquesta frase és incorrecta?"
+            ),
+            "pistes": [
+                "Què té de diferent μ respecte de la mostra? Una de les "
+                "dues coses és aleatòria i l'altra no.",
+                "Un cop l'interval [3,2 ; 4,8] ja està calculat, μ hi és "
+                "o no hi és. No té sentit parlar de probabilitat sobre un "
+                "fet ja determinat: l'aleatorietat era a la mostra.",
+            ],
         },
         {
             "id": 3,
@@ -172,6 +196,19 @@ _IC001_PROBLEM = {
             ),
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
+            "canonical_question": (
+                "Dona ara una interpretació correcta de l'interval "
+                "[3,2 ; 4,8] hores/dia per a la mitjana μ d'hores d'estudi "
+                "diari dels estudiants de primer."
+            ),
+            "pistes": [
+                "Comença la frase amb «Tenim una confiança del 95%...» en "
+                "lloc de «la probabilitat...». El canvi de paraula no és "
+                "cosmètic: és el cor del concepte.",
+                "'Confiança' aquí vol dir la fiabilitat a llarg termini "
+                "del procediment: si el repetíssim moltes vegades, el 95% "
+                "dels intervals construïts contindrien μ.",
+            ],
         },
     ],
 }
@@ -328,6 +365,21 @@ _CAUS001_PROBLEM = {
             ),
             "typical_error_label": "CAUS_direct",
             "key_concepts": ["confounding_variable"],
+            "canonical_question": (
+                "Fes la mitjana ponderada per estimar l'AEP esperada dels "
+                "joves de nacionalitat espanyola i compara-la amb el 10,6% "
+                "reportat. La diferència entre grups, és real o és un "
+                "artefacte? I si és real, ja en podem concloure que "
+                "l'origen migrat n'és la causa?"
+            ),
+            "pistes": [
+                "La mitjana ponderada: 14,0 = 0,126 × 36,1 + 0,874 × x. "
+                "Aïlla x i compara amb el 10,6%.",
+                "El càlcul només confirma que el gap és aritmèticament "
+                "consistent (és real, no un error de mostra). Real ≠ "
+                "causal: dos grups que difereixen en l'origen també "
+                "difereixen en moltes altres coses.",
+            ],
         },
         {
             "id": 2,
@@ -456,6 +508,21 @@ _CAUS001_PROBLEM = {
             ),
             "typical_error_label": "CAUS_no_alternatives",
             "key_concepts": ["confounding_variable"],
+            "canonical_question": (
+                "Per a cada variable (renda, sexe, segregació escolar), fes "
+                "la mitjana ponderada de l'AEP esperada per grup d'origen, "
+                "digues quants punts del gap (25,5) explica i si és "
+                "confusora. Recorda: cal complir ELS DOS criteris — predir "
+                "l'AEP I distribuir-se diferent per origen."
+            ),
+            "pistes": [
+                "Per a cada variable, calcula l'AEP esperada de nadius i de "
+                "migrats com a mitjana ponderada amb les seves proporcions, "
+                "i resta-les per veure quants punts del gap explica.",
+                "Vigila el sexe: prediu fort l'AEP (criteri a), però es "
+                "distribueix gairebé igual entre nadius i migrats (51,7% vs "
+                "48,7%), així que falla el criteri b. Predir ≠ confondre.",
+            ],
         },
         {
             "id": 3,
@@ -546,6 +613,23 @@ _CAUS001_PROBLEM = {
             ),
             "typical_error_label": "CAUS_direct",
             "key_concepts": ["confounding_variable"],
+            "canonical_question": (
+                "Amb les taxes del quasi-experiment del CED (nascuts aquí "
+                "21,2%, arribats abans dels 7 anys 21,7%, nacionalitat "
+                "espanyola 10,6%): què esperaríem si l'origen fos la causa "
+                "directa? I si ho fos la trajectòria escolar? Per què tots "
+                "dos grups superen tant el 10,6%? Quina lectura causal "
+                "global en treus?"
+            ),
+            "pistes": [
+                "Compara primer 21,2% amb 21,7%: són gairebé iguals. Què "
+                "descarta aquesta igualtat — l'origen, o la trajectòria "
+                "escolar dins el sistema català?",
+                "Si no és ni l'origen en si ni els anys d'escola, què "
+                "comparteixen els dos subgrups i els distingeix dels "
+                "nadius? El context socioeconòmic i estructural de les "
+                "famílies.",
+            ],
         },
     ],
 }
@@ -604,6 +688,48 @@ def list_ids():
     primer IC-001, després CAUS-001.
     """
     return [(pid, bundle["title_human"]) for pid, bundle in PROBLEMS.items()]
+
+
+# =============================================================================
+# Accessors per a la capa determinista (Python posa preguntes i pistes)
+# =============================================================================
+# Aquests helpers donen a la màquina d'estats (simulator.py / app.py) accés
+# directe a la pregunta canònica i a les pistes pre-escrites de cada pas,
+# sense que el model les hagi de redactar. És el suport del transvasament
+# Tier 1 (Python garanteix l'enunciat del pas) i Tier 3 (pistes amb control).
+
+def _step_by_id(problem_id, step_num):
+    """Retorna el dict del pas `step_num` (1-based) del problema indicat."""
+    passos = PROBLEMS[problem_id]["problem"]["passos"]
+    if not (1 <= step_num <= len(passos)):
+        raise IndexError(
+            f"Pas {step_num} fora de rang per a {problem_id} "
+            f"(té {len(passos)} passos)."
+        )
+    return passos[step_num - 1]
+
+
+def canonical_question(problem_id, step_num):
+    """Pregunta canònica curta del pas `step_num` (1-based) d'un problema.
+
+    És l'àncora determinista que Python injecta quan el tutor avança: així
+    l'enunciat del pas següent sempre apareix, encara que el model no
+    l'escrigui (o l'escrigui malament). Si un pas no defineix
+    `canonical_question` explícitament, caiem al seu camp `text` complet.
+    """
+    paso = _step_by_id(problem_id, step_num)
+    return paso.get("canonical_question") or paso["text"]
+
+
+def step_hints(problem_id, step_num):
+    """Llista de pistes progressives pre-escrites del pas (pot ser buida)."""
+    return list(_step_by_id(problem_id, step_num).get("pistes", []))
+
+
+def prereq_question(problem_id):
+    """Pregunta canònica del prerequisit del problema (per al retrocés)."""
+    bundle = PROBLEMS[problem_id]
+    return bundle["prerequisites"][bundle["prereq_id"]]["question"]
 
 
 # =============================================================================

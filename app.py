@@ -140,7 +140,7 @@ h1 {
     margin-left: auto;
 }
 
-/* Colors semàntics */
+/* Colors semàntics (acció pedagògica) */
 .tutor-green    { background: #e8f5e9; border-color: #2e7d32; }
 .tutor-yellow   { background: #fff8e1; border-color: #ef6c00; }
 .tutor-gray     { background: #f5f5f5; border-color: #757575; }
@@ -152,6 +152,50 @@ h1 {
     font-style: italic;
     opacity: 0.85;
 }
+
+/* Targeta determinista: enunciat posat per Python (no pel model).
+   Color sobri i diferent dels semàntics d'acció: blau pissarra amb
+   vora discontínua, perquè es llegeixi "això ho garanteix el sistema". */
+.tutor-deterministic {
+    background: #eef2f7;
+    border-color: #334e68;
+    border-left-style: dashed;
+}
+
+/* Xips d'origen: capa ortogonal al color d'acció. Diu QUI ha generat
+   la bombolla — codi determinista (Python) o model estocàstic (IA). */
+.source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: none;
+    margin-left: 0.5rem;
+}
+.chip-py { background: #d1e3f8; color: #1a3c5e; border: 1px solid #7fa8d4; }
+.chip-ai { background: #ede7f6; color: #4527a0; border: 1px solid #b39ddb; }
+
+/* Llegenda de les dues capes de color */
+.layer-legend {
+    display: flex; flex-wrap: wrap; gap: 0.75rem;
+    font-size: 0.78rem; color: rgba(0,0,0,0.6);
+    margin: 0.2rem 0 1.0rem 0; align-items: center;
+}
+.layer-legend .lg { display: inline-flex; align-items: center; gap: 0.35rem; }
+.layer-legend .sw {
+    width: 0.85rem; height: 0.85rem; border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.25); display: inline-block;
+}
+.ia-status {
+    font-size: 0.8rem; padding: 0.35rem 0.7rem; border-radius: 8px;
+    margin-bottom: 0.8rem; display: inline-block;
+}
+.ia-ok   { background: #e8f5e9; color: #1b5e20; border: 1px solid #66bb6a; }
+.ia-warn { background: #fff3e0; color: #7c4a03; border: 1px solid #ffb74d; }
 
 .stButton button { border-radius: 8px; font-weight: 500; }
 
@@ -303,25 +347,70 @@ def position_label(state):
 # Render: components
 # =============================================================================
 
-def render_tutor_card(text, color, badge=None):
+def _source_chip(source):
+    """HTML del xip d'origen (capa ortogonal al color d'acció)."""
+    if source == "py":
+        return ('<span class="source-chip chip-py">🐍 Python · determinista</span>')
+    if source == "ai":
+        return ('<span class="source-chip chip-ai">🤖 IA · heurística</span>')
+    return ""
+
+
+def render_tutor_card(text, color, badge=None, source="ai", label="Pregunta."):
     badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
     body_html = simple_md_to_html(text)
-    # Etiqueta "Pregunta." al damunt del cos. Decisió arquitectònica:
-    # la presentació del format del missatge és responsabilitat de
-    # Python, no del model. El model escriu el contingut lliurement;
-    # el renderer afegeix l'etiqueta uniforme.
-    pregunta_label = '<p class="pregunta-label">Pregunta.</p>'
+    chip_html = _source_chip(source)
+    # Etiqueta al damunt del cos. La presentació del format és
+    # responsabilitat de Python, no del model: el model escriu el
+    # contingut lliurement; el renderer afegeix l'etiqueta uniforme.
+    label_html = (f'<p class="pregunta-label">{label}</p>' if label else "")
     html = (
         f'<div class="tutor-card tutor-{color}">'
         f'<div class="tutor-header">'
         f'<span>🎓 Tutor</span>'
+        f"{chip_html}"
         f"{badge_html}"
         f"</div>"
-        f"{pregunta_label}"
+        f"{label_html}"
         f'<div class="tutor-body">{body_html}</div>'
         f"</div>"
     )
     st.markdown(html, unsafe_allow_html=True)
+
+
+def render_deterministic_card(text, badge=None):
+    """Targeta per a l'enunciat canònic que injecta Python en avançar.
+
+    Es pinta amb l'estil determinista (blau pissarra, vora discontínua) i
+    el xip 🐍 Python, perquè davant del professorat quedi visible que
+    aquest enunciat el garanteix el codi, no el model."""
+    render_tutor_card(
+        text, color="deterministic", badge=badge, source="py",
+        label="Enunciat del pas.",
+    )
+
+
+def render_layer_legend():
+    """Llegenda de les DUES capes de color: acció pedagògica + origen.
+
+    Per a una demo davant professorat de mètodes, fa explícit que el
+    sistema combina control determinista (Python) i generació estocàstica
+    (IA), i que el color de fons codifica la decisió pedagògica del tutor."""
+    st.markdown(
+        '<div class="layer-legend">'
+        '<span class="lg"><b>Acció:</b></span>'
+        '<span class="lg"><span class="sw" style="background:#e8f5e9;'
+        'border-color:#2e7d32"></span>avança</span>'
+        '<span class="lg"><span class="sw" style="background:#fff8e1;'
+        'border-color:#ef6c00"></span>avança amb dubtes / reforç</span>'
+        '<span class="lg"><span class="sw" style="background:#f5f5f5;'
+        'border-color:#757575"></span>es queda</span>'
+        '<span class="lg" style="margin-left:0.6rem">'
+        '<span class="source-chip chip-py">🐍 Python</span>'
+        '<span class="source-chip chip-ai">🤖 IA</span></span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_thinking_card():
@@ -338,21 +427,58 @@ def render_thinking_card():
 # Render: vista de conversa
 # =============================================================================
 
+def _trailing_tutor_cluster(state):
+    """Bombolles del tutor des de l'últim torn de l'alumne fins al final
+    del display. Normalment: el reply del model + (si n'hi ha) l'enunciat
+    canònic que Python ha injectat en avançar. A l'obertura: l'enunciat
+    inicial. Si encara no hi ha display (estats heretats), cau al reply
+    del transcript."""
+    display = state.get("display")
+    if not display:
+        latest = next(
+            (t["content"] for t in reversed(state["transcript"])
+             if t["role"] == "tutor"), None,
+        )
+        return [{"role": "tutor", "content": latest, "source": "ai"}] if latest else []
+
+    cluster = []
+    for item in reversed(display):
+        if item["role"] == "student":
+            break
+        cluster.append(item)
+    cluster.reverse()
+    return [c for c in cluster if c["role"] == "tutor"]
+
+
 def render_chat_view(state):
-    """Mostra només el torn actual: cap historial al viewport."""
-    latest_tutor = next(
-        (t["content"] for t in reversed(state["transcript"])
-         if t["role"] == "tutor"),
-        None,
-    )
+    """Mostra el clúster de tutor del torn actual: la resposta del model
+    (acolorida per acció) i, si Python ha posat l'enunciat del pas següent,
+    la seva bombolla determinista a sota."""
+    cluster = _trailing_tutor_cluster(state)
     color = determine_turn_color(state)
     badge = position_label(state)
+
+    render_layer_legend()
 
     # st.empty() ens permet substituir el contingut durant la crida
     # LLM amb el placeholder "Pensant…".
     tutor_slot = st.empty()
     with tutor_slot.container():
-        render_tutor_card(latest_tutor, color, badge)
+        if not cluster:
+            render_thinking_card()
+        for i, item in enumerate(cluster):
+            if item["source"] == "py" and i > 0:
+                # Enunciat canònic injectat per Python (després del reply IA).
+                render_deterministic_card(item["content"], badge=badge)
+            elif item["source"] == "py":
+                # Bombolla determinista solitària (obertura, o mode reserva
+                # que ja és py): mostra-la amb el seu color d'acció habitual
+                # però xip Python.
+                lbl = "Enunciat del pas." if state.get("turn_count", 0) == 0 else "Pregunta."
+                render_tutor_card(item["content"], color, badge,
+                                  source="py", label=lbl)
+            else:
+                render_tutor_card(item["content"], color, badge, source="ai")
 
     col_hint, col_end = st.columns(2)
     with col_hint:
@@ -388,6 +514,7 @@ def render_chat_view(state):
         render_thinking_card()
 
     state["transcript"].append({"role": "student", "content": student_msg})
+    S.append_display(state, "student", student_msg, "student")
     state["turn_count"] += 1
 
     try:
@@ -404,18 +531,28 @@ def render_chat_view(state):
             f"Error tècnic en cridar el model: {type(exc).__name__}: {exc}"
         )
         state["transcript"].pop()
+        if state.get("display") and state["display"][-1]["role"] == "student":
+            state["display"].pop()
         state["turn_count"] -= 1
         st.stop()
+
+    # Origen del reply: "py" si ha respost el mode de reserva, "ai" si IA.
+    reply_source = "py" if result.get("mode") == "py" else "ai"
 
     # CRÍTIC: afegir el reply al transcript abans del següent torn.
     # (Bug original del simulator que el sistema arrastrava.)
     state["transcript"].append({"role": "tutor", "content": result["reply"]})
+    S.append_display(state, "tutor", result["reply"], reply_source)
 
     position_before = {
         "step": state["current_step"],
         "prereq": state["active_prereq"],
     }
-    S.apply_action(state, result["action"])
+    transition = S.apply_action(state, result["action"])
+    # Tier 1: Python garanteix la pregunta canònica del nou pas/reforç com a
+    # bombolla determinista (source="py"). Així l'enunciat sempre apareix
+    # encara que el model no l'escrigui, i el color/xip el distingeixen.
+    S.enrich_after_transition(state, transition)
     position_after = {
         "step": state["current_step"],
         "prereq": state["active_prereq"],
@@ -598,6 +735,22 @@ def main():
     problem_id = st.session_state.problem_id
     title_human = PB.PROBLEMS[problem_id]["title_human"]
     st.title(f"Tutoria ({title_human.lower()})")
+
+    # Indicador d'estat de la IA. Si l'API no està disponible, l'app no
+    # peta: opera en mode de reserva (heurística). Útil de tenir visible
+    # en una demo en directe.
+    if L.ia_disponible():
+        st.markdown(
+            f'<span class="ia-status ia-ok">🤖 IA connectada · {L.MODEL}</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<span class="ia-status ia-warn">🐍 Mode de reserva (sense IA) · '
+            "avaluació heurística per paraules clau. Defineix "
+            "<code>GEMINI_API_KEY</code> per a l'experiència completa.</span>",
+            unsafe_allow_html=True,
+        )
 
     if "state" not in st.session_state:
         st.session_state.state = S.new_session(problem_id)

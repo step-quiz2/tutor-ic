@@ -23,10 +23,17 @@ import json
 import os
 import re
 import time
+import unicodedata
 from pathlib import Path
 
-from google import genai
-from google.genai import types as genai_types
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    _GENAI_OK = True
+except Exception:  # SDK absent (demo sense API, o entorn de test amb stubs)
+    genai = None
+    genai_types = None
+    _GENAI_OK = False
 
 import problem as PB
 
@@ -92,6 +99,18 @@ def _get_client():
             )
         _client = genai.Client(api_key=api_key)
     return _client
+
+
+def ia_disponible() -> bool:
+    """True si hi ha SDK de Gemini + clau d'API a l'entorn.
+
+    Si retorna False, `tutor_turn` opera en **mode de reserva**: una
+    heurística senzilla per paraules clau que permet que el flux complet
+    (avançar, pistes, retrocés) sigui demostrable sense IA. Pensat com a
+    xarxa de seguretat per a una demo en directe: si l'API cau, l'app no
+    peta amb un stack trace, sinó que degrada a un tutor mínim.
+    """
+    return _GENAI_OK and bool(os.environ.get("GEMINI_API_KEY"))
 
 
 # -----------------------------------------------------------------------------
@@ -315,6 +334,94 @@ def _parse_control_block(text: str) -> dict:
 
 
 # -----------------------------------------------------------------------------
+# Mode de reserva (sense IA) — xarxa de seguretat per a la demo
+# -----------------------------------------------------------------------------
+
+def _normalitza(s: str) -> str:
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def _fallback_turn(problem: dict, current_position: dict,
+                   transcript: list) -> dict:
+    """Torn sense IA: heurística per paraules clau perquè el flux es pugui
+    provar (o salvar una demo) sense clau d'API.
+
+    No és pedagògicament intel·ligent: detecta si l'última resposta de
+    l'alumne conté prou keywords del concepte clau del pas i, si és així,
+    avança; si no, ofereix una pista pre-escrita. La pregunta canònica del
+    pas següent NO la posa aquí — la injecta la màquina d'estats
+    (simulator.enrich_after_transition), igual que en mode IA.
+    """
+    step = current_position.get("step")
+    prereq = current_position.get("prereq")
+    pid = problem["id"]
+
+    ultim_student = next(
+        (t["content"] for t in reversed(transcript)
+         if t["role"] == "student"),
+        "",
+    )
+    demana_pista = "(L'alumne demana una pista)" in ultim_student
+
+    # Dins del reforç: avaluem contra els keywords del prerequisit.
+    if prereq:
+        bundle = PB.PROBLEMS[pid]
+        pre = bundle["prerequisites"][bundle["prereq_id"]]
+        claus = [_normalitza(k) for k in pre.get("keywords_required", [])]
+        resp = _normalitza(ultim_student)
+        encerts = sum(1 for k in claus if k and k in resp)
+        if not demana_pista and encerts >= 2:
+            return _fb_result("Molt bé, aquesta és la distinció clau. "
+                              "Tornem on érem.", "advance")
+        return _fb_result(
+            "Pensa-ho així: una de les dues quantitats és un nombre fix "
+            "(encara que no el coneguem) i l'altra canvia cada cop que "
+            "agafem una mostra nova. Quina és quina?", "stay")
+
+    # Pas normal: keywords de les dependències del pas.
+    paso = problem["passos"][step - 1] if step else problem["passos"][0]
+    dep_keys = paso.get("key_concepts", [])
+    deps = PB.PROBLEMS[pid]["dependencies"]
+    claus = []
+    for dk in dep_keys:
+        claus += [_normalitza(k) for k in deps.get(dk, {}).get("keywords", [])]
+    resp = _normalitza(ultim_student)
+    encerts = sum(1 for k in claus if k and k in resp)
+
+    pistes = PB.step_hints(pid, step) if step else []
+
+    if demana_pista:
+        pista = pistes[0] if pistes else (
+            "Comença pel càlcul concret que demana l'enunciat i mira què "
+            "en surt.")
+        return _fb_result(f"Pista: {pista}", "stay")
+
+    # Llindar deliberadament permissiu (el fallback ha de deixar avançar
+    # la demo, no fer de porter estricte).
+    if encerts >= 2 or (encerts >= 1 and len(resp) > 80):
+        return _fb_result("Molt bé, ho has argumentat correctament. "
+                          "Avancem.", "advance")
+
+    pista = pistes[0] if pistes else (
+        "Vigila de no confondre que una associació sigui real amb que "
+        "sigui causal.")
+    return _fb_result(f"Encara no del tot. Pista: {pista}", "stay")
+
+
+def _fb_result(reply: str, action: str) -> dict:
+    return {
+        "reply": reply,
+        "action": action,
+        "objectives_met": [],
+        "n_api_calls": 0,
+        "mode": "py",
+        "raw_output": "",
+        "control_parse_ok": True,
+    }
+
+
+# -----------------------------------------------------------------------------
 # Funció pública: tutor_turn
 # -----------------------------------------------------------------------------
 
@@ -386,6 +493,11 @@ def tutor_turn(problem: dict, current_position: dict,
                 f"tutor al transcript després de cada crida."
             )
 
+    # Mode de reserva: sense SDK/clau, no cridem l'API. Xarxa de seguretat
+    # perquè una demo en directe no caigui si la connexió falla.
+    if not ia_disponible():
+        return _fallback_turn(problem, current_position, transcript)
+
     system_instruction = _load_system_prompt(problem)
 
     # Construïm el multi-turn contents: cada torn del transcript és un
@@ -433,6 +545,7 @@ def tutor_turn(problem: dict, current_position: dict,
         "action": control["action"],
         "objectives_met": control["objectives_met"],
         "n_api_calls": 1,
+        "mode": "ai",
         "raw_output": raw_output,
         "control_parse_ok": parse_ok,
     }

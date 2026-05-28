@@ -4,6 +4,48 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-05-28 — Transvasament d'arquitectura des de tutor-div (Python posa la pregunta)
+
+Backport de tres patrons del projecte germà `tutor-div` que feien la
+seva interacció més natural i fiable, sense canviar el contingut
+pedagògic ni el nombre de passos.
+
+**Tier 1 — Python garanteix la pregunta canònica (canvi de fons).**
+Abans, en avançar de pas, el model havia de redactar ell mateix
+l'enunciat del pas següent i mantenir la coherència entre l'`action`
+del control block i el text del reply; això es domava amb dues seccions
+llargues i fràgils del system prompt ("Format obligatori del reply quan
+avances" i "Regla absoluta de coherència entre `action` i contingut").
+Ara `simulator.apply_action` retorna un codi de transició i
+`simulator.enrich_after_transition` injecta de manera **determinista**
+la pregunta canònica del pas nou (o del reforç, en retrocedir) com a
+bombolla pròpia, també enganxada al transcript perquè el model la vegi.
+Variant "xarxa de seguretat", no la dura: el model encara pot fer una
+transició conversacional, i hi ha anti-duplicació si ja ha escrit la
+pregunta. Les dues seccions fràgils del prompt s'han eliminat dels dos
+fitxers (IC-001 i CAUS-001). Camps nous `canonical_question` per pas a
+`problem.py` + accessors `canonical_question`/`step_hints`/
+`prereq_question`.
+
+**Tier 2 — doble codi de colors (acció pedagògica + origen).** El
+registre nou `state["display"]` etiqueta cada bombolla amb el seu
+`source` (`py` determinista / `ai` heurística / `student`). La UI
+(`app.py`) afegeix un xip 🐍 Python / 🤖 IA i una targeta determinista
+diferenciada, mantenint intacte el color d'acció existent (verd/groc/
+gris). Fa visible, per a una audiència de mètodes, la combinació de
+control determinista i generació estocàstica en un mateix sistema.
+
+**Tier 3 — pistes pre-escrites i mode de reserva.** Cada pas porta ara
+2 pistes progressives (`pistes`) a `problem.py`. `llm.py` guanya
+`ia_disponible()` i un `_fallback_turn` heurístic per paraules clau:
+si l'API no està disponible (clau absent o caiguda), l'app no peta —
+degrada a un tutor mínim, útil com a salvavides per a una demo en
+directe. `app.py` mostra l'estat de la IA (connectada / mode reserva).
+
+Tests nous a `test_enrichment.py` (37 casos: codis de transició,
+injecció canònica, anti-duplicació, display/source, fallback). Total
+de la suite: 232 tests en verd (195 previs intactes + 37 nous).
+
 ## 2026-05-25 — CAUS-001: nou contingut (origen migrat i AEP, dades Idescat/Bofill)
 
 Substitució del contingut pedagògic del bundle CAUS-001 dins del

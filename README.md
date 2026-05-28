@@ -23,6 +23,17 @@ model per cada torn de conversa; sense classificadors intermedis.
   a IC-001; PRE-CONFOUNDER (variable confusora) per a CAUS-001.
 - **Una crida a Gemini per torn** (`tutor_turn`), amb multi-turn API i
   marcador de posició al darrer missatge user.
+- **Python posa la pregunta de cada pas** (determinista). En avançar o
+  retrocedir, és el codi qui injecta l'enunciat canònic del pas/reforç
+  com a bombolla pròpia, no el model. Això elimina la classe de bugs de
+  desincronització `action`/text i permet un system prompt més prim.
+- **Doble codi de colors**: el color de fons codifica l'acció
+  pedagògica (verd avança · groc avança amb dubtes/reforç · gris es
+  queda) i un xip indica l'origen de cada bombolla (🐍 Python
+  determinista · 🤖 IA heurística).
+- **Pistes pre-escrites** per pas (2 progressives) i **mode de reserva**
+  sense IA (heurística per paraules clau): si l'API cau durant una demo,
+  l'app degrada en lloc de petar.
 - **Format de sortida del model**: text natural per a l'alumne +
   separador `---CONTROL---` + JSON `{action, objectives_met}`.
 - Senyals UI: `💡 Pista` (botó), `🚪 Acabar` (botó). A CLI: `?` i `!!`.

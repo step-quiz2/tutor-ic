@@ -99,6 +99,13 @@ def new_session(problem_id=None):
         "problem_id": problem_id,
         "started_at": time.time(),
         "transcript": [{"role": "tutor", "content": opening}],
+        # `display`: registre orientat a la UI. Cada bombolla porta el seu
+        # `source` perquè el renderer la pugui acolorir segons qui l'ha
+        # generada — "py" (determinista, Python) o "ai" (heurística, model).
+        # L'enunciat d'obertura i les preguntes canòniques dels passos són
+        # sempre "py". Es manté separat del `transcript` (context del model)
+        # perquè el transcript no ha de duplicar les bombolles deterministes.
+        "display": [{"role": "tutor", "content": opening, "source": "py"}],
         "current_step": 1,
         "active_prereq": None,
         "step_before_prereq": None,
@@ -110,9 +117,22 @@ def new_session(problem_id=None):
 
 
 def apply_action(state, action):
-    """Aplica una transició d'estat segons l'acció del control block."""
+    """Aplica una transició d'estat segons l'acció del control block.
+
+    Retorna un codi de transició perquè el caller sàpiga quina pregunta
+    canònica (determinista) ha d'injectar al display:
+        "stay"            → cap canvi de posició
+        "next_step"       → avançat a un pas nou dins del problema
+        "finished"        → avançat des de l'últim pas (sessió completa)
+        "enter_prereq"    → entrat al reforç
+        "exit_prereq"     → sortit del reforç (torna al pas que el va activar)
+        "noop"            → acció sense efecte (p.ex. retreat ja dins reforç)
+
+    Compatibilitat: els callers antics que ignoren el valor de retorn
+    segueixen funcionant; només muta `state` com sempre.
+    """
     if action == "stay":
-        return
+        return "stay"
 
     if action == "advance":
         if state["active_prereq"]:
@@ -120,21 +140,113 @@ def apply_action(state, action):
             state["current_step"] = state["step_before_prereq"]
             state["active_prereq"] = None
             state["step_before_prereq"] = None
+            return "exit_prereq"
         elif state["current_step"] is not None:
             pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
             total = len(PB.PROBLEMS[pid]["problem"]["passos"])
             if state["current_step"] < total:
                 state["current_step"] += 1
+                return "next_step"
             else:
                 state["finished"] = True
-        return
+                return "finished"
+        return "noop"
 
     if action == "retreat_to_prereq":
         if state["active_prereq"] is None:
             state["step_before_prereq"] = state["current_step"]
             state["active_prereq"] = _prereq_id_for(state)
+            return "enter_prereq"
         # Si ja està a prereq, no-op (el model l'estaria demanant per error).
-        return
+        return "noop"
+
+    return "noop"
+
+
+# -----------------------------------------------------------------------------
+# Capa determinista: Python garanteix la pregunta canònica
+# -----------------------------------------------------------------------------
+
+def append_display(state, role, content, source):
+    """Afegeix una bombolla al registre de display (UI), amb el seu origen.
+
+    source ∈ {"py", "ai", "student"}. No toca el `transcript` (context del
+    model): això ho fan els callers explícitament quan cal.
+    """
+    state.setdefault("display", []).append(
+        {"role": role, "content": content, "source": source}
+    )
+
+
+def canonical_text_for_transition(state, transition):
+    """Pregunta canònica (determinista) que toca mostrar després d'una
+    transició, o None si la transició no en necessita.
+
+    - next_step / exit_prereq → pregunta canònica del pas actual.
+    - enter_prereq            → pregunta del prerequisit.
+    - la resta                → None.
+    """
+    pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+    if transition in ("next_step", "exit_prereq"):
+        return PB.canonical_question(pid, state["current_step"])
+    if transition == "enter_prereq":
+        return PB.prereq_question(pid)
+    return None
+
+
+def enrich_after_transition(state, transition):
+    """Garanteix que la pregunta canònica del nou pas/reforç aparegui sempre.
+
+    És el cor del transvasament Tier 1: en lloc de confiar que el model
+    redacti la pregunta del pas següent (i mantingui la coherència
+    action/text a còpia de regles al prompt), Python l'injecta de manera
+    determinista quan hi ha hagut una transició de posició.
+
+    Variant "xarxa de seguretat" (no la versió dura de A): el model encara
+    pot fer una transició conversacional al seu reply; aquí només afegim
+    l'enunciat canònic com a àncora **si encara no hi és**, en una bombolla
+    pròpia marcada com a determinista (source="py").
+
+    Doble efecte:
+      - Al `display`: bombolla determinista separada (es pinta diferent).
+      - Al `transcript`: s'enganxa al darrer torn del tutor perquè el model
+        vegi en el seu context la pregunta que ara toca respondre i no es
+        trenqui l'alternança tutor/student.
+
+    Retorna el text injectat (str) o None si no calia.
+    """
+    canonical = canonical_text_for_transition(state, transition)
+    if not canonical:
+        return None
+
+    # Anti-duplicació: si el reply del model ja conté (gairebé) la pregunta
+    # canònica, no la repetim. Comparem un tros distintiu normalitzat.
+    last_tutor = next(
+        (t["content"] for t in reversed(state["transcript"])
+         if t["role"] == "tutor"),
+        "",
+    )
+    probe = _normalize_for_dup(canonical)[:60]
+    if probe and probe in _normalize_for_dup(last_tutor):
+        return None
+
+    # Display: bombolla determinista pròpia.
+    append_display(state, "tutor", canonical, "py")
+    # Transcript: enganxa al darrer tutor (manté l'alternança i informa el
+    # model de la pregunta vigent).
+    for m in reversed(state["transcript"]):
+        if m["role"] == "tutor":
+            m["content"] += f"\n\n{canonical}"
+            break
+    return canonical
+
+
+def _normalize_for_dup(s):
+    """Normalització laxa per detectar si una pregunta ja és al text."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.split())
 
 
 def position_dict(state):
@@ -486,6 +598,7 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
 
         # Afegim el torn de l'alumne al transcript
         state["transcript"].append({"role": "student", "content": student_msg})
+        append_display(state, "student", student_msg, "student")
         state["turn_count"] += 1
 
         # Cridem el model
@@ -500,10 +613,15 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
             disp.error(f"⚠ Error a la crida LLM: {type(e).__name__}: {e}")
             # Retirem el torn de l'alumne perquè pugui tornar-ho a provar
             state["transcript"].pop()
+            if state["display"] and state["display"][-1]["role"] == "student":
+                state["display"].pop()
             state["turn_count"] -= 1
             continue
 
         state["last_raw_output"] = result["raw_output"]
+
+        # Origen del reply: "py" si ha respost el mode de reserva, "ai" si IA.
+        reply_source = "py" if result.get("mode") == "py" else "ai"
 
         # Afegim la resposta del tutor al transcript. Sense aquesta línia,
         # cada crida posterior enviaria una seqüència de missatges 'student'
@@ -512,13 +630,19 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
         # quedant-li només el position_marker com a font de veritat.
         # Veure `test_tutor_turn.py` Test 17/18.
         state["transcript"].append({"role": "tutor", "content": result["reply"]})
+        append_display(state, "tutor", result["reply"], reply_source)
 
         # Anotació al rastre detallat
         position_before = {"step": state["current_step"],
                            "prereq": state["active_prereq"]}
 
-        # Apliquem la transició al state
-        apply_action(state, result["action"])
+        # Apliquem la transició al state i obtenim el codi de transició.
+        transition = apply_action(state, result["action"])
+
+        # Tier 1: Python garanteix la pregunta canònica del nou pas/reforç
+        # com a bombolla determinista (source="py"), en lloc de confiar que
+        # el model la redacti i mantingui la coherència action/text.
+        canonical = enrich_after_transition(state, transition)
 
         position_after = {"step": state["current_step"],
                           "prereq": state["active_prereq"]}
@@ -536,8 +660,12 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
             "elapsed_seconds": elapsed,
         })
 
-        # Mostrem la resposta del tutor
-        disp.tutor(result["reply"])
+        # Mostrem la resposta del tutor (amb etiqueta d'origen) i, si Python
+        # ha injectat la pregunta canònica, també.
+        tag = "[🐍 Python]" if reply_source == "py" else "[🤖 IA]"
+        disp.tutor(f"{tag} {result['reply']}")
+        if canonical:
+            disp.tutor(f"[🐍 Python · enunciat del pas] {canonical}")
 
         # Meta info: transició si n'hi ha; debug si està actiu
         if position_before != position_after:
