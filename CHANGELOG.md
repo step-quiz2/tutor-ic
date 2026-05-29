@@ -4,6 +4,17 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-05-29 — Revisió de textos deterministes (lectura humana)
+
+Reescriptura per part del docent de 15 de les frases que Python escriu
+de manera determinista a l'alumne (enunciats, texts de pas, preguntes
+canòniques, pistes, pregunta i explicació dels reforços), a `problem.py`.
+Es forcen salts de línia per millorar la llegibilitat a l'app. No canvia
+cap lògica ni cap test (232 en verd). En els tres passos d'IC-001, el
+text complet del pas i la pregunta canònica passen a ser idèntics, de
+manera que l'enunciat que es veu en entrar al pas i el que Python
+reinjecta en avançar-hi coincideixen exactament.
+
 ## 2026-05-28 — Transvasament d'arquitectura des de tutor-div (Python posa la pregunta)
 
 Backport de tres patrons del projecte germà `tutor-div` que feien la

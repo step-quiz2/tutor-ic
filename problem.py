@@ -73,12 +73,10 @@ _IC001_PREREQUISITES = {
         "forbidden_keywords": ["μ és aleatòria", "mu és aleatòria",
                                "μ és aleatòri", "mu és aleatòri"],
         "explanation": (
-            "**μ és un paràmetre poblacional**: un nombre fix, "
-            "desconegut, però **no aleatori**. "
-            "**x̄ és un estadístic mostral**: varia d'una mostra a una "
-            "altra, és **aleatori**. "
-            "La inferència freqüentista fa afirmacions probabilístiques "
-            "sobre x̄ (i intervals construïts a partir de x̄), no sobre μ."
+            """**μ és un paràmetre poblacional**: un nombre fix, desconegut, però **no aleatori**.
+**x̄ és un estadístic mostral**: varia d'una mostra a una altra, és **aleatori**.
+
+La inferència freqüentista fa afirmacions probabilístiques sobre x̄ (i els intervals construïts a partir de x̄), però no sobre μ."""
         ),
     },
 }
@@ -87,29 +85,23 @@ _IC001_PROBLEM = {
     "id": "IC-001",
     "tema": "Interpretació d'un interval de confiança",
     "enunciat": (
-        "S'ha fet una recerca per estimar quantes hores al dia "
-        "estudien, durant l'època d'exàmens, els estudiants de "
-        "primer curs d'un Grau universitari. La població d'interès "
-        "són aproximadament 250 estudiants.\n\n"
-        "A partir d'una mostra aleatòria de 44 estudiants obtenim:\n\n"
-        "  - Mitjana mostral: x̄ = 4,0 hores/dia\n"
-        "  - Desviació estàndard estimada: σ ≈ 2,7 hores\n\n"
-        "A partir d'aquestes dades s'obté un interval de confiança "
-        "per a la mitjana μ d'hores d'estudi diari:\n\n"
-        "  [3,2 ; 4,8] hores/dia"
+        """S'ha fet una recerca per estimar quantes hores al dia estudien, durant l'època d'exàmens, els estudiants de primer curs d'un Grau universitari. La població d'interès són aproximadament 250 estudiants.
+A partir d'una mostra aleatòria de 44 estudiants obtenim:
+  - Mitjana mostral: x̄ = 4,0 hores/dia
+  - Desviació estàndard estimada: σ ≈ 2,7 hores
+
+S'obté un interval de confiança del 95% per a la mitjana (μ):
+
+  [3,2 ; 4,8] hores/dia"""
     ),
     "dependencies": ["param_vs_stat"],
     "passos": [
         {
             "id": 1,
             "text": (
-                "El nivell de confiança del 95% que apareix a "
-                "l'enunciat fa referència a una probabilitat. "
-                "Explica sobre què fa referència aquesta "
-                "probabilitat: creus que és sobre les hores d'estudi "
-                "reals dels estudiants, sobre la nostra estimació "
-                "mostral x̄ = 4,0, o potser sobre l'interval "
-                "[3,2 ; 4,8] que hem construït, o una altra opció?"
+                """El nivell de confiança del 95% que apareix a l'enunciat fa referència a una probabilitat. 
+
+Sobre què fa referència aquesta probabilitat?"""
             ),
             "expected_summary": (
                 "El 95% és una propietat del procediment: si "
@@ -126,14 +118,12 @@ _IC001_PROBLEM = {
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
             "canonical_question": (
-                "El nivell de confiança del 95% fa referència a una "
-                "probabilitat. Sobre què recau aquesta probabilitat: "
-                "sobre les hores reals dels estudiants, sobre x̄ = 4,0, "
-                "o sobre l'interval [3,2 ; 4,8] que hem construït?"
+                """El nivell de confiança del 95% que apareix a l'enunciat fa referència a una probabilitat. 
+
+Sobre què fa referència aquesta probabilitat?"""
             ),
             "pistes": [
-                "Pensa en QUÈ varia i QUÈ és fix. La mostra (i l'interval "
-                "que en surt) canviaria si repetíssim l'estudi; μ no.",
+                """La mitjana mostral i l'interval que en surt canviarien si repetíssim l'estudi; en canvi, la mitjana (μ) no canviaria.""",
                 "El 95% és una propietat del *procediment*: de tots els "
                 "intervals que construiríem repetint el mostreig, el 95% "
                 "contindrien μ. No és una afirmació sobre μ.",
@@ -142,10 +132,10 @@ _IC001_PROBLEM = {
         {
             "id": 2,
             "text": (
-                "Imagina que un company et diu: «la probabilitat que "
-                "la mitjana real d'hores d'estudi μ estigui entre "
-                "3,2 i 4,8 hores és del 95%».\n\n"
-                "Per què aquesta frase és incorrecta?"
+                """Imagina que algú diu:
+«Hi ha una probabilitat del 95% que la mitjana real (μ) estigui entre 3,2h/dia i 4,8h/dia».
+
+Per què aquesta frase és incorrecta?"""
             ),
             "expected_summary": (
                 "Perquè μ és un paràmetre fix, no una variable "
@@ -163,8 +153,10 @@ _IC001_PROBLEM = {
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
             "canonical_question": (
-                "Un company afirma: «la probabilitat que μ estigui entre "
-                "3,2 i 4,8 és del 95%». Per què aquesta frase és incorrecta?"
+                """Imagina que algú diu:
+«Hi ha una probabilitat del 95% que la mitjana real (μ) estigui entre 3,2h/dia i 4,8h/dia».
+
+Per què aquesta frase és incorrecta?"""
             ),
             "pistes": [
                 "Què té de diferent μ respecte de la mostra? Una de les "
@@ -177,9 +169,7 @@ _IC001_PROBLEM = {
         {
             "id": 3,
             "text": (
-                "Dona ara una interpretació correcta de l'interval "
-                "[3,2 ; 4,8] hores/dia per a la mitjana μ d'hores "
-                "d'estudi diari dels estudiants de primer."
+                """Per acabar, explica amb les teves paraules com interpretes l'interval [3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
             ),
             "expected_summary": (
                 "Tenim una *confiança* del 95% que μ estigui dins "
@@ -197,9 +187,7 @@ _IC001_PROBLEM = {
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
             "canonical_question": (
-                "Dona ara una interpretació correcta de l'interval "
-                "[3,2 ; 4,8] hores/dia per a la mitjana μ d'hores d'estudi "
-                "diari dels estudiants de primer."
+                """Per acabar, explica amb les teves paraules com interpretes l'interval [3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
             ),
             "pistes": [
                 "Comença la frase amb «Tenim una confiança del 95%...» en "
@@ -265,12 +253,10 @@ _CAUS001_PREREQUISITES = {
         "id": "PRE-CONFOUNDER",
         "concept": "confounding_variable",
         "question": (
-            "En un poble de la costa observem que, dia a dia, les "
-            "**hores de sol** i les **vendes de begudes fredes** estan "
-            "fortament correlacionades (r = 0,85). Podem dir que tenir "
-            "més hores de sol **causa** que la gent compri més begudes "
-            "fredes? Què podria explicar millor per què les dues "
-            "variables pugen alhora?"
+            """En un poble de la costa observem que, dia a dia, les **hores de sol** i les **vendes de begudes fredes** estan fortament correlacionades (r = 0,85).
+
+1. Podem afirmar que tenir més hores de sol **és la causa** que la gent compri més begudes fredes? 
+2. Creus que pots explicar millor per quin motiu estan correlacionades?"""
         ),
         "keywords_required": [
             "confus", "tercera", "amagada", "oculta", "comuna",
@@ -280,17 +266,11 @@ _CAUS001_PREREQUISITES = {
         ],
         "forbidden_keywords": [],
         "explanation": (
-            "Una **variable confusora** és una tercera variable que causa "
-            "alhora les dues variables observades, produint una associació "
-            "entre elles sense que cap de les dues causi l'altra. En aquest "
-            "exemple, la **calor** (o, més en general, el fet que sigui un "
-            "dia d'estiu) causa alhora moltes hores de sol i moltes vendes "
-            "de begudes fredes. El sol i les begudes fredes no estan en una "
-            "relació causal directa: tots dos són efectes de la mateixa "
-            "causa subjacent. Aquesta és la raó fonamental per la qual una "
-            "correlació observada, per alta que sigui, no permet inferir "
-            "causalitat: sempre podem estar veient l'ombra d'una variable "
-            "confusora que no hem mesurat."
+            """Una **variable confusora** és una tercera variable que causa alhora les dues variables observades, produint una associació entre elles sense que cap de les dues causi l'altra.
+
+En aquest exemple, la **calor** (o, més en general, el fet que sigui un dia d'estiu) causa alhora moltes hores de sol i moltes vendes de begudes fredes.
+
+El sol i les begudes fredes no estan en una relació causal directa: tots dos són efectes de la mateixa causa subjacent. Aquesta és la raó fonamental per la qual una correlació observada, per alta que sigui, no permet inferir causalitat: sempre podem estar veient l'ombra d'una variable confusora que no hem mesurat."""
         ),
     },
 }
@@ -299,15 +279,14 @@ _CAUS001_PROBLEM = {
     "id": "CAUS-001",
     "tema": "Interpretació d'una correlació observada — correlació vs. causalitat",
     "enunciat": (
-        "Segons les dades publicades per la Fundació Bofill (2024) "
-        "i per Idescat i EPA (2023), tenim aquests fets:\n\n"
-        "AEP: taxa d'abandonament escolar prematur.\n\n"
-        "A Catalunya l'AEP entre joves de 18 a 24 anys és d'un 36,1% "
-        "entre joves d'origen estranger i d'un 10,6% entre joves de "
-        "nacionalitat espanyola. La taxa és més de tres vegades "
-        "superior entre l'alumnat d'origen migrat.\n\n"
-        "Anem a interpretar aquesta diferència pas a pas, amb dades "
-        "reals i càlculs."
+        """La Fundació Bofill (2024) i Idescat i EPA (2023 aporten dades sobre l'AEP: taxa d'abandonament escolar prematur.
+
+A Catalunya l'AEP entre joves de 18 a 24 anys és:
+- d'un 36,1% entre joves d'origen estranger
+- d'un 10,6% entre joves de nacionalitat espanyola.
+
+La taxa és més de tres vegades superior entre l'alumnat d'origen migrat.
+Anem a interpretar aquesta diferència pas a pas, amb dades reals i càlculs."""
     ),
     "dependencies": ["confounding_variable"],
     "passos": [
@@ -366,19 +345,16 @@ _CAUS001_PROBLEM = {
             "typical_error_label": "CAUS_direct",
             "key_concepts": ["confounding_variable"],
             "canonical_question": (
-                "Fes la mitjana ponderada per estimar l'AEP esperada dels "
-                "joves de nacionalitat espanyola i compara-la amb el 10,6% "
-                "reportat. La diferència entre grups, és real o és un "
-                "artefacte? I si és real, ja en podem concloure que "
-                "l'origen migrat n'és la causa?"
+                """1) Fes la mitjana ponderada per estimar l'AEP esperada dels joves de nacionalitat espanyola
+2) Compara-la amb el 10,6% que tenim de les dades.
+3) La diferència entre grups, és real o és un artefacte? I si és real, ja en podem concloure que l'origen migrat n'és la causa?"""
             ),
             "pistes": [
-                "La mitjana ponderada: 14,0 = 0,126 × 36,1 + 0,874 × x. "
-                "Aïlla x i compara amb el 10,6%.",
-                "El càlcul només confirma que el gap és aritmèticament "
-                "consistent (és real, no un error de mostra). Real ≠ "
-                "causal: dos grups que difereixen en l'origen també "
-                "difereixen en moltes altres coses.",
+                """Equació per a trobar la mitjana ponderada: 
+14,0 = 0,126 · 36,1 + 0,874 · x.""",
+                """El càlcul només confirma que el gap és aritmèticament consistent (és real, no un error de mostra).
+
+Però real no implica causal: els dos grups que difereixen en l'origen també difereixen en moltes altres coses.""",
             ],
         },
         {
