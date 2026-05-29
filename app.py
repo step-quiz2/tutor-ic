@@ -116,6 +116,13 @@ h1 {
     margin: 0 0 0.8rem 0;
     color: rgba(0,0,0,0.78);
 }
+.page-suffix {
+    margin: 0.8rem 0 0 0;
+    font-size: 0.78rem;
+    font-style: italic;
+    color: rgba(0,0,0,0.45);
+    text-align: right;
+}
 .tutor-body blockquote {
     border-left: 3px solid rgba(0,0,0,0.18);
     padding: 0.3rem 0 0.3rem 0.8rem;
@@ -356,14 +363,108 @@ def _source_chip(source):
     return ""
 
 
-def render_tutor_card(text, color, badge=None, source="ai", label="Pregunta."):
+# -----------------------------------------------------------------------------
+# Paginació de bombolles llargues (UI pura, no toca dades ni transcript)
+# -----------------------------------------------------------------------------
+# Algunes bombolles deterministes (sobretot l'obertura de CAUS-001) són
+# massa llargues per a una sola viewport. Les partim en "subpantalles" i en
+# revelem una cada cop que l'usuari prem "Continuar", sense esborrar les
+# anteriors. És purament de presentació: el `content` real de la bombolla
+# (el que veuen el model i el transcript) no canvia mai.
+
+# Pressupost de caràcters per pàgina. Per sota d'això, la bombolla es
+# mostra sencera i no apareix cap botó. Ajustat perquè una obertura llarga
+# quedi en ~2 pàgines i els enunciats/pistes curts en 1.
+PAGE_CHAR_BUDGET = 600
+
+# Prefixos que marquen l'inici "natural" d'una secció nova: si un bloc en
+# comença per un, és un bon lloc per tallar pàgina encara que no s'hagi
+# esgotat el pressupost (evita partir, p. ex., una llista de dades a/b/c o
+# separar les preguntes del seu context).
+_SECTION_STARTS = ("Pregunta", "── PAS", "Tenim aquestes dades",
+                   "Calcula", "a)", "Fes ", "1)", "1.", "Imagina")
+
+
+def paginate_text(text):
+    """Parteix un text en pàgines acumulant paràgrafs (separats per línia
+    en blanc) fins a esgotar el pressupost de caràcters. Mai parteix un
+    paràgraf pel mig: respecta els salts que ha posat el docent. A més,
+    prefereix tallar just abans d'un bloc que obre una secció nova (dades,
+    preguntes), perquè cada subpantalla quedi conceptualment sencera.
+    Retorna una llista de strings (>=1); un text curt retorna una pàgina."""
+    if not text:
+        return [""]
+    blocks = [b for b in text.split("\n\n")]
+    pages, cur, cur_len = [], [], 0
+    for b in blocks:
+        bstrip = b.lstrip()
+        opens_section = any(bstrip.startswith(p) for p in _SECTION_STARTS)
+        blen = len(b)
+        over_budget = cur and (cur_len + blen > PAGE_CHAR_BUDGET)
+        # Tallem si: passem pressupost, O bé el bloc obre secció i la pàgina
+        # actual ja té prou cos perquè valgui la pena un tall net.
+        natural_break = cur and opens_section and cur_len > PAGE_CHAR_BUDGET * 0.5
+        if over_budget or natural_break:
+            pages.append("\n\n".join(cur))
+            cur, cur_len = [b], blen
+        else:
+            cur.append(b)
+            cur_len += blen + 2
+    if cur:
+        pages.append("\n\n".join(cur))
+    return pages or [""]
+
+
+def render_paginated_card(bubble_key, text, color, badge, source, label):
+    """Renderitza una bombolla possiblement paginada.
+
+    - Si el text cap en una pàgina: el comportament és idèntic a abans
+      (una targeta, cap botó).
+    - Si té diverses pàgines: mostra les pàgines ja revelades com a
+      targetes successives (les anteriors NO desapareixen) i, si en
+      queden, un botó "Continuar" que en revela una més.
+
+    El nombre de pàgines revelades es desa a st.session_state amb una clau
+    estable per bombolla (`bubble_key`), de manera que sobreviu als reruns
+    i és independent per a cada bombolla.
+    """
+    pages = paginate_text(text)
+    n = len(pages)
+
+    if n == 1:
+        # Cas comú: una sola targeta, sense paginació.
+        _render_one(text, color, badge, source, label, suffix="")
+        return
+
+    shown_key = f"pages_shown::{bubble_key}"
+    shown = st.session_state.get(shown_key, 1)
+    shown = max(1, min(shown, n))
+
+    for idx in range(shown):
+        # Etiqueta: la primera pàgina manté l'etiqueta original; les
+        # continuacions porten un peu discret "(continua)".
+        pg_label = label if idx == 0 else None
+        suffix = "" if idx == 0 else f"(part {idx + 1} de {n})"
+        _render_one(pages[idx], color, badge if idx == 0 else None,
+                    source, pg_label, suffix=suffix)
+
+    if shown < n:
+        restant = n - shown
+        if st.button(f"Continuar ({restant} més) ↓",
+                     key=f"more::{bubble_key}",
+                     use_container_width=True):
+            st.session_state[shown_key] = shown + 1
+            st.rerun()
+
+
+def _render_one(text, color, badge, source, label, suffix=""):
+    """Renderitza una única targeta (una pàgina). `suffix` és un peu
+    discret opcional (p. ex. 'part 2 de 2')."""
     badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
     body_html = simple_md_to_html(text)
     chip_html = _source_chip(source)
-    # Etiqueta al damunt del cos. La presentació del format és
-    # responsabilitat de Python, no del model: el model escriu el
-    # contingut lliurement; el renderer afegeix l'etiqueta uniforme.
     label_html = (f'<p class="pregunta-label">{label}</p>' if label else "")
+    suffix_html = (f'<p class="page-suffix">{suffix}</p>' if suffix else "")
     html = (
         f'<div class="tutor-card tutor-{color}">'
         f'<div class="tutor-header">'
@@ -373,21 +474,10 @@ def render_tutor_card(text, color, badge=None, source="ai", label="Pregunta."):
         f"</div>"
         f"{label_html}"
         f'<div class="tutor-body">{body_html}</div>'
+        f"{suffix_html}"
         f"</div>"
     )
     st.markdown(html, unsafe_allow_html=True)
-
-
-def render_deterministic_card(text, badge=None):
-    """Targeta per a l'enunciat canònic que injecta Python en avançar.
-
-    Es pinta amb l'estil determinista (blau pissarra, vora discontínua) i
-    el xip 🐍 Python, perquè davant del professorat quedi visible que
-    aquest enunciat el garanteix el codi, no el model."""
-    render_tutor_card(
-        text, color="deterministic", badge=badge, source="py",
-        label="Enunciat del pas.",
-    )
 
 
 def render_layer_legend():
@@ -453,10 +543,17 @@ def _trailing_tutor_cluster(state):
 def render_chat_view(state):
     """Mostra el clúster de tutor del torn actual: la resposta del model
     (acolorida per acció) i, si Python ha posat l'enunciat del pas següent,
-    la seva bombolla determinista a sota."""
+    la seva bombolla determinista a sota. Les bombolles llargues es
+    paginen en subpantalles amb un botó "Continuar"."""
     cluster = _trailing_tutor_cluster(state)
     color = determine_turn_color(state)
     badge = position_label(state)
+    pid = state.get("problem_id", "")
+    # Índex base d'aquest clúster dins el display (per a claus estables de
+    # paginació). El clúster són les últimes bombolles de tutor; comptem
+    # quantes n'hi ha al display per derivar el seu índex inicial.
+    display = state.get("display", [])
+    base_idx = len(display) - len(cluster)
 
     render_layer_legend()
 
@@ -467,18 +564,26 @@ def render_chat_view(state):
         if not cluster:
             render_thinking_card()
         for i, item in enumerate(cluster):
+            bubble_key = f"{pid}#{base_idx + i}"
             if item["source"] == "py" and i > 0:
                 # Enunciat canònic injectat per Python (després del reply IA).
-                render_deterministic_card(item["content"], badge=badge)
+                render_paginated_card(
+                    bubble_key, item["content"], color="deterministic",
+                    badge=badge, source="py", label="Enunciat del pas.",
+                )
             elif item["source"] == "py":
                 # Bombolla determinista solitària (obertura, o mode reserva
-                # que ja és py): mostra-la amb el seu color d'acció habitual
-                # però xip Python.
+                # que ja és py): color d'acció habitual però xip Python.
                 lbl = "Enunciat del pas." if state.get("turn_count", 0) == 0 else "Pregunta."
-                render_tutor_card(item["content"], color, badge,
-                                  source="py", label=lbl)
+                render_paginated_card(
+                    bubble_key, item["content"], color=color, badge=badge,
+                    source="py", label=lbl,
+                )
             else:
-                render_tutor_card(item["content"], color, badge, source="ai")
+                render_paginated_card(
+                    bubble_key, item["content"], color=color, badge=badge,
+                    source="ai", label="Pregunta.",
+                )
 
     col_hint, col_end = st.columns(2)
     with col_hint:

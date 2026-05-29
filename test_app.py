@@ -229,6 +229,38 @@ check("sense step ni reforç → None",
       app.position_label({"current_step": None, "active_prereq": None}) is None)
 
 
+print("\nTest 12 — paginate_text")
+# Text curt → una sola pàgina.
+check("text curt → 1 pàgina",
+      len(app.paginate_text("Una frase curta.")) == 1)
+check("text buit → 1 pàgina amb cadena buida",
+      app.paginate_text("") == [""])
+# Text llarg amb molts paràgrafs → més d'una pàgina.
+long_text = "\n\n".join([f"Paràgraf número {i} amb força text per omplir "
+                          f"espai i superar el pressupost de pàgina, prou "
+                          f"llarg de debò." for i in range(10)])
+pages = app.paginate_text(long_text)
+check("text llarg → més d'una pàgina", len(pages) > 1, f"{len(pages)}")
+# Integritat: juntar pàgines reconstrueix l'original exactament.
+check("les pàgines reconstrueixen el text original",
+      "\n\n".join(pages) == long_text)
+# Mai parteix un paràgraf pel mig: cap pàgina conté un tros de paràgraf.
+all_blocks = set(long_text.split("\n\n"))
+recon_blocks = set("\n\n".join(pages).split("\n\n"))
+check("no parteix paràgrafs pel mig", all_blocks == recon_blocks)
+# Tall natural: un bloc que obre secció ('Pregunta 1.') comença pàgina nova.
+sectioned = ("Context inicial prou llarg per superar amb folgança la "
+             "meitat del pressupost de pàgina, de manera que el tall "
+             "natural just abans de la pregunta tingui sentit i no deixi "
+             "una pàgina ridículament curta al davant; hi afegim encara "
+             "una mica més de text per assegurar que passem el llindar de "
+             "tall natural sense problemes de marge.\n\n"
+             "Pregunta 1. Què en penses?")
+pgs = app.paginate_text(sectioned)
+check("tall natural davant 'Pregunta'", len(pgs) == 2 and
+      pgs[1].lstrip().startswith("Pregunta 1."), f"{len(pgs)}")
+
+
 # =============================================================================
 # Resum
 # =============================================================================

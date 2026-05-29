@@ -4,6 +4,25 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-05-29 — Paginació de bombolles llargues ("Continuar")
+
+Millora d'UI/UX: les bombolles del tutor massa llargues per a una sola
+viewport (sobretot l'obertura de CAUS-001 i els passos 2 i 3, amb
+subapartats) ara es revelen per parts. Es mostra la primera subpantalla
+i un botó **"Continuar (N més) ↓"**; en prémer-lo s'afegeix la part
+següent en una targeta nova **sense esborrar les anteriors**. Quan no
+queden parts, el botó desapareix.
+
+És purament de presentació (`app.py`): `paginate_text` parteix el text
+en pàgines pels salts de paràgraf que ja hi ha, sense partir mai un
+paràgraf pel mig i preferint tallar just abans d'un bloc que obre secció
+(dades, preguntes). El comptador de pàgines revelades viu a
+`st.session_state` amb una clau estable per bombolla; **no es toca cap
+dada, ni el `transcript`, ni el context del model, ni la màquina
+d'estats** — el model i la IA continuen veient el text sencer. Els
+textos curts (enunciats breus, pistes) es mostren d'un sol cop, sense
+botó. Tests nous a `test_app.py` (paginació). Total: 238 tests en verd.
+
 ## 2026-05-29 — Revisió de textos deterministes (lectura humana)
 
 Reescriptura per part del docent de 15 de les frases que Python escriu
