@@ -39,6 +39,7 @@ st.set_page_config(
     page_title="Tutor d'estadística",
     page_icon="🎓",
     layout="centered",
+    initial_sidebar_state="expanded",
 )
 
 # Patrons mofa per a la detecció de "vacil·lar". Llista deliberadament
@@ -206,12 +207,13 @@ h1 {
 
 .stButton button { border-radius: 8px; font-weight: 500; }
 
-/* Mantén visibles els controls de la barra lateral encara que amaguem la
-   capçalera de Streamlit; si no, una barra lateral plegada no es podria
-   tornar a obrir. Inofensiu si el testid no existeix en aquesta versió. */
+/* La barra lateral (columna d'accions) ha d'estar SEMPRE desplegada: amaguem
+   el botó "<<" de plegar i qualsevol control de re-obrir. Combinat amb
+   initial_sidebar_state="expanded", la columna no es pot compactar mai.
+   Inofensiu si el testid no existeix en aquesta versió. */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] { display: flex !important; }
+[data-testid="collapsedControl"] { display: none !important; }
 
 /* -------------------------------------------------------------------------
    Botons del selector de problema (pantalla inicial).
@@ -260,6 +262,17 @@ h1 {
 .summary-header p { margin: 0; opacity: 0.85; font-size: 1.0rem; }
 .summary-success { background: #e8f5e9; border: 2px solid #2e7d32; color: #1b5e20; }
 .summary-neutral { background: #f5f5f5; border: 2px solid #9e9e9e; color: #424242; }
+</style>
+"""
+
+
+# CSS per a les pantalles SENSE columna d'accions (selector i resum). Com que
+# ara la barra lateral arrenca desplegada de manera global, en aquestes
+# pantalles (que no hi posen res) amaguem el panell sencer perquè es vegin a
+# tota amplada. A la pantalla de xat NO s'injecta, així la columna hi surt.
+HIDE_SIDEBAR_CSS = """
+<style>
+[data-testid="stSidebar"] { display: none !important; }
 </style>
 """
 
@@ -917,6 +930,7 @@ def main():
 
     # Picker: si l'alumne encara no ha triat problema, mostra'l i atura.
     if "problem_id" not in st.session_state:
+        st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
         render_picker()
         return
 
@@ -948,6 +962,7 @@ def main():
     if state.get("finished"):
         if "quality_signals" not in state:
             state["quality_signals"] = S.compute_quality_signals(state)
+        st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
         render_summary_view(state)
     else:
         render_chat_view(state)
