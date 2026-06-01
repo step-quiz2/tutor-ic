@@ -206,6 +206,49 @@ h1 {
 
 .stButton button { border-radius: 8px; font-weight: 500; }
 
+/* Mantén visibles els controls de la barra lateral encara que amaguem la
+   capçalera de Streamlit; si no, una barra lateral plegada no es podria
+   tornar a obrir. Inofensiu si el testid no existeix en aquesta versió. */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] { display: flex !important; }
+
+/* -------------------------------------------------------------------------
+   Botons del selector de problema (pantalla inicial).
+   Cada botó es pinta pel seu `key` (Streamlit afegeix la classe
+   st-key-<key> al contenidor del widget). En repòs, fons fluix i vora
+   fina del color; en hover, fons més fort i vora negra més gruixuda.
+   box-sizing: border-box evita que el gruix extra de la vora desplaci res.
+   ------------------------------------------------------------------------- */
+.st-key-pick_IC-001 button,
+.st-key-pick_CAUS-001 button {
+    box-sizing: border-box;
+    transition: background-color 0.12s ease, border-color 0.12s ease,
+                border-width 0.12s ease, color 0.12s ease;
+}
+/* IC-001 → blau fluix */
+.st-key-pick_IC-001 button {
+    background: #e3f2fd !important;
+    color: #0d47a1 !important;
+    border: 1.5px solid #90caf9 !important;
+}
+.st-key-pick_IC-001 button:hover {
+    background: #64b5f6 !important;
+    color: #0d2c54 !important;
+    border: 3px solid #000 !important;
+}
+/* CAUS-001 → verd fluix */
+.st-key-pick_CAUS-001 button {
+    background: #e8f5e9 !important;
+    color: #1b5e20 !important;
+    border: 1.5px solid #a5d6a7 !important;
+}
+.st-key-pick_CAUS-001 button:hover {
+    background: #81c784 !important;
+    color: #0d3d12 !important;
+    border: 3px solid #000 !important;
+}
+
 /* Resum final */
 .summary-header {
     text-align: center;
@@ -361,6 +404,31 @@ def _source_chip(source):
     if source == "ai":
         return ('<span class="source-chip chip-ai">🤖 IA · heurística</span>')
     return ""
+
+
+def _split_opening(problem_id, content):
+    """Separa el contingut d'obertura en (enunciat, pregunta).
+
+    L'obertura la construeix simulator.new_session com
+    `enunciat + "\\n\\n" + passos[0]['text']`. Aquí fem servir l'enunciat
+    del problema com a prefix per tallar el contingut real de la bombolla,
+    de manera que l'enunciat vagi a una targeta i la pregunta del Pas 1 a
+    una altra just a sota. És purament de presentació: no toca ni el
+    `display` ni el `transcript` (el model continua veient el text sencer).
+
+    Si el contingut no encaixa amb aquest patró (estats heretats o text
+    editat), retorna (content, None) i es mostra com una sola bombolla.
+    """
+    try:
+        p = PB.PROBLEMS[problem_id]["problem"]
+    except (KeyError, TypeError):
+        return content, None
+    enunciat = (p.get("enunciat") or "").strip()
+    body = (content or "").strip()
+    if enunciat and body.startswith(enunciat):
+        pregunta = body[len(enunciat):].strip()
+        return enunciat, (pregunta or None)
+    return content, None
 
 
 # -----------------------------------------------------------------------------
@@ -566,33 +634,53 @@ def render_chat_view(state):
         for i, item in enumerate(cluster):
             bubble_key = f"{pid}#{base_idx + i}"
             if item["source"] == "py" and i > 0:
-                # Enunciat canònic injectat per Python (després del reply IA).
+                # Pregunta canònica injectada per Python (després del reply IA):
+                # estil determinista (vora discontínua) per marcar-la com a
+                # garantida pel sistema.
                 render_paginated_card(
                     bubble_key, item["content"], color="deterministic",
-                    badge=badge, source="py", label="Enunciat del pas.",
+                    badge=badge, source="py", label="Pregunta.",
                 )
             elif item["source"] == "py":
-                # Bombolla determinista solitària (obertura, o mode reserva
-                # que ja és py): color d'acció habitual però xip Python.
-                lbl = "Enunciat del pas." if state.get("turn_count", 0) == 0 else "Pregunta."
-                render_paginated_card(
-                    bubble_key, item["content"], color=color, badge=badge,
-                    source="py", label=lbl,
-                )
+                if state.get("turn_count", 0) == 0:
+                    # Obertura: el contingut és l'enunciat del problema + la
+                    # pregunta del Pas 1, enganxats. Els separem en DUES
+                    # bombolles: l'enunciat a dalt ("Enunciat.") i la pregunta
+                    # just a sota ("Pregunta."). L'enunciat porta el badge i el
+                    # xip; la pregunta, com que és continuació del mateix
+                    # missatge, no els repeteix.
+                    enunciat_txt, pregunta_txt = _split_opening(
+                        pid, item["content"]
+                    )
+                    render_paginated_card(
+                        f"{bubble_key}::enunciat", enunciat_txt, color=color,
+                        badge=badge, source="py", label="Enunciat.",
+                    )
+                    if pregunta_txt:
+                        render_paginated_card(
+                            f"{bubble_key}::pregunta", pregunta_txt, color=color,
+                            badge=None, source="", label="Pregunta.",
+                        )
+                else:
+                    # Bombolla py solitària fora de l'obertura (p. ex. mode
+                    # de reserva): color d'acció habitual, xip Python.
+                    render_paginated_card(
+                        bubble_key, item["content"], color=color, badge=badge,
+                        source="py", label="Pregunta.",
+                    )
             else:
                 render_paginated_card(
                     bubble_key, item["content"], color=color, badge=badge,
                     source="ai", label="Pregunta.",
                 )
 
-    col_hint, col_end = st.columns(2)
-    with col_hint:
+    with st.sidebar:
+        st.markdown("### Accions")
         hint_clicked = st.button(
             "💡 Demanar pista",
             use_container_width=True,
             key="btn_hint",
         )
-    with col_end:
         end_clicked = st.button(
             "🚪 Acabar sessió",
             use_container_width=True,
@@ -801,10 +889,7 @@ def render_picker():
     el bundle correcte a tutor_turn.
     """
     st.title("Tutoria")
-    st.markdown(
-        "Tria amb quin problema vols treballar avui. Cada sessió en treballa "
-        "un de sol; per canviar de problema, recarrega la pàgina."
-    )
+    st.markdown("Escull un d'aquests problemes")
     st.markdown("")
 
     for pid, title_human in PB.list_ids():
@@ -812,17 +897,15 @@ def render_picker():
         with st.container(border=True):
             st.markdown(f"### {title_human}")
             st.markdown(
-                f"<div style='color:#666; font-size:0.9em;'>"
+                f"<div style='color:#666; font-size:1.08em;'>"
                 f"<code>{pid}</code> — {bundle['problem']['tema']}"
                 f"</div>",
                 unsafe_allow_html=True,
             )
             st.markdown("")
             if st.button(
-                f"Treballar aquest problema",
+                "Treballar aquest problema",
                 key=f"pick_{pid}",
-                use_container_width=True,
-                type="primary" if pid == PB.DEFAULT_PROBLEM_ID else "secondary",
             ):
                 st.session_state.problem_id = pid
                 st.session_state.state = S.new_session(pid)
