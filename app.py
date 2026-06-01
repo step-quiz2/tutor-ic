@@ -215,6 +215,24 @@ h1 {
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"] { display: none !important; }
 
+/* La columna d'accions ocupa l'amplada MÍNIMA: s'encongeix fins a encabir els
+   botons amb el text en una sola línia, sense espai sobrant. Cal anul·lar el
+   min-width per defecte de Streamlit (si no, no es deixaria estrènyer) i
+   posar els botons a amplada de contingut amb nowrap perquè no saltin de
+   línia. max-width és només un sostre de seguretat. */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div:first-child,
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    width: fit-content !important;
+    min-width: unset !important;
+}
+section[data-testid="stSidebar"] { max-width: 20rem !important; }
+section[data-testid="stSidebar"] .stButton > button {
+    width: auto !important;
+    white-space: nowrap !important;
+}
+
 /* -------------------------------------------------------------------------
    Botons del selector de problema (pantalla inicial).
    Cada botó es pinta pel seu `key` (Streamlit afegeix la classe
@@ -691,12 +709,10 @@ def render_chat_view(state):
         st.markdown("### Accions")
         hint_clicked = st.button(
             "💡 Demanar pista",
-            use_container_width=True,
             key="btn_hint",
         )
         end_clicked = st.button(
             "🚪 Acabar sessió",
-            use_container_width=True,
             key="btn_end",
         )
 
