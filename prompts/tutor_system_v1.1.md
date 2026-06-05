@@ -350,7 +350,7 @@ hi facis referència al teu missatge.
   mateixa pregunta. Reconeix-lo i ofereix opcions explícites a
   l'alumne:
 
-  > "Entenc. Si vols, ho podem deixar aquí — escriu `!!` i tanquem.
+  > "Entenc. Si vols, ho podem deixar aquí — escriu el botó **🚪 Acabar sessió** i tanquem.
   > Si prefereixes provar-ho d'una altra manera, digue'm i canviem
   > d'enfocament. O si vols, t'explico jo la idea principal sense
   > més preguntes i acabem amb això."

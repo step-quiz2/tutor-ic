@@ -56,6 +56,20 @@ MOCKERY_PATTERNS = (
 # Ha de coincidir amb el que espera el system prompt.
 HINT_MARKER = "(L'alumne demana una pista)"
 
+# Comandes de sortida heretades del CLI (simulator.py). A la UI de Streamlit
+# NO són un mecanisme real — el tancament es fa amb el botó "🚪 Acabar sessió".
+# Però alumnes (i el propi model, si el prompt en parla) poden escriure-les.
+# Les interceptem aquí i les tractem com el botó Acabar, perquè MAI arribin al
+# model com si fossin una resposta de l'alumne (evita el bucle "escriu !! per
+# tancar" → l'alumne escriu !! → no passa res → el tutor hi torna a insistir).
+EXIT_COMMANDS = {"!!", "/quit", "/exit"}
+
+
+def is_exit_command(text):
+    """True si `text` és una comanda de sortida heretada del CLI (només la
+    comanda, tolerant espais). Aïllat de Streamlit per poder-se testejar."""
+    return isinstance(text, str) and text.strip() in EXIT_COMMANDS
+
 
 # =============================================================================
 # CSS
@@ -730,6 +744,13 @@ def render_chat_view(state):
 
     if student_msg is None:
         return
+
+    # Comandes de sortida heretades del CLI: si l'alumne escriu només "!!"
+    # (o /quit, /exit), tanquem la sessió com faria el botó Acabar. No ho
+    # enviem al model. Comparem sobre el text net per tolerar espais.
+    if is_exit_command(student_msg):
+        state["finished"] = True
+        st.rerun()
 
     # Substituïm la targeta amb "Pensant…" abans de la crida.
     with tutor_slot.container():

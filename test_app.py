@@ -262,6 +262,30 @@ check("tall natural davant 'Pregunta'", len(pgs) == 2 and
 
 
 # =============================================================================
+# Comandes de sortida heretades del CLI (fix del bug "!!")
+# =============================================================================
+print("\nComandes de sortida (!! /quit /exit)")
+
+check("!! és comanda de sortida", app.is_exit_command("!!"))
+check("/quit és comanda de sortida", app.is_exit_command("/quit"))
+check("/exit és comanda de sortida", app.is_exit_command("/exit"))
+check("!! amb espais també (es retalla)", app.is_exit_command("  !!  "))
+
+# Negatius: text normal de l'alumne NO s'ha de tractar com a sortida, encara
+# que contingui "!!" enmig d'una frase (el bug original era que el model en
+# parlava i l'alumne escrivia frases del tipus "estic escrivint !!, però...").
+check("frase amb !! enmig NO és sortida",
+      not app.is_exit_command("estic escrivint !!, però no surts"))
+check("text normal NO és sortida",
+      not app.is_exit_command("la mitjana és un valor fix"))
+check("buit NO és sortida", not app.is_exit_command(""))
+check("None NO peta i NO és sortida", not app.is_exit_command(None))
+
+# La marca de pista no s'ha de confondre mai amb una comanda de sortida.
+check("HINT_MARKER NO és sortida", not app.is_exit_command(app.HINT_MARKER))
+
+
+# =============================================================================
 # Resum
 # =============================================================================
 print()
