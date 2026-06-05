@@ -35,28 +35,35 @@ import simulator as S
 # Configuració
 # =============================================================================
 
-def _query_flag(name):
-    """Llegeix un flag de la URL (?name=1) de manera defensiva. Streamlit
-    real exposa st.query_params amb .get(); alguns stubs de test no, així
-    que tolerem qualsevol forma i caiem a False sense petar a l'import."""
+def _query_flag(name, default=False):
+    """Llegeix un flag booleà de la URL de manera defensiva.
+
+    Convenció: `?name=1` → True, `?name=0` → False. Si el paràmetre no hi és
+    (o no podem llegir query_params, p. ex. amb un stub de test), es retorna
+    `default`. Streamlit real exposa st.query_params amb .get(); alguns stubs
+    no, i en aquest cas no petem a l'import: caiem a `default`.
+    """
     try:
         qp = st.query_params
         getter = getattr(qp, "get", None)
         if callable(getter):
-            return getter(name) == "1"
+            val = getter(name)
+            if val is None:
+                return default
+            return str(val) == "1"
     except Exception:
         pass
-    return False
+    return default
 
 
-# Mode docent: s'activa de manera estable amb ?docent=1 a la URL. En aquest
-# mode l'app mostra un panell de senyals SEMPRE VISIBLE (no plegable, sense
-# toggle) al costat de la conversa, per a demostracions davant professorat.
-# Els senyals (acció stay/advance, codi de malentesa, origen IA/Python) són
-# vocabulari de docent: els alumnes (URL normal) no els veuen mai i mantenen
-# l'experiència socràtica intacta. El layout passa a "wide" només en docent
-# perquè hi càpiga la segona columna; en mode alumne queda "centered".
-DOCENT_MODE = _query_flag("docent")
+# Mode docent: ACTIU PER DEFECTE. El panell de senyals (sempre visible, al
+# costat de la conversa) és la vista per a demostracions davant professorat.
+# Per a una sessió amb alumnes cal desactivar-lo EXPLÍCITAMENT amb ?docent=0
+# a la URL: així els codis de malentesa (INT_prob_param, etc.) — vocabulari de
+# docent — no es mostren a l'alumne i l'experiència socràtica queda intacta.
+# El layout és "wide" en mode docent (hi cap la segona columna) i "centered"
+# en mode alumne.
+DOCENT_MODE = _query_flag("docent", default=True)
 
 st.set_page_config(
     page_title="Tutor d'estadística",
@@ -355,9 +362,12 @@ section[data-testid="stSidebar"] .stButton > button {
 .signals-title .signals-sub {
     font-weight: 500; font-size: 0.78rem; color: rgba(0,0,0,0.45);
 }
-.inspector-attr {
-    font-size: 0.74rem; color: rgba(0,0,0,0.6);
-    margin: 0.55rem 0 0.2rem 0; line-height: 1.6;
+/* Tesi del panell: es diu UN sol cop a la capçalera (no a cada torn), en
+   gris discret. No és un senyal viu — és context fix. */
+.signals-thesis {
+    font-size: 0.74rem; color: rgba(0,0,0,0.5);
+    margin: 0.15rem 0 0.7rem 0; line-height: 1.5;
+    border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 0.6rem;
 }
 </style>
 """
@@ -771,7 +781,9 @@ def render_inspector(state):
     """
     st.markdown(
         '<div class="signals-title">🔬 Senyals en directe '
-        '<span class="signals-sub">(mode docent)</span></div>',
+        '<span class="signals-sub">(mode docent)</span></div>'
+        '<div class="signals-thesis">🤖 la IA emet l\'acció · '
+        "🐍 Python decideix la posició</div>",
         unsafe_allow_html=True,
     )
 
@@ -782,28 +794,16 @@ def render_inspector(state):
         return
 
     bg, border = snap["swatch"]
-    warn_mark = " ⚠" if not snap["parse_ok"] else ""
     st.markdown(
         f'<div class="inspector-row">'
         f'<span class="sw" style="background:{bg};border-color:{border}"></span>'
         f'<b>Acció: {snap["action_label"]}</b>'
-        f'<span class="act-code">{snap["action"]}{warn_mark}</span>'
         f"</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
         f'<div class="inspector-line">Posició: '
         f'<code>{snap["before"]}</code> → <code>{snap["after"]}</code></div>',
-        unsafe_allow_html=True,
-    )
-
-    # Atribució explícita (el cor de la tesi): la IA només EMET l'acció;
-    # Python DECIDEIX la posició i, si cal, injecta l'enunciat canònic.
-    st.markdown(
-        '<div class="inspector-attr">'
-        '<span class="source-chip chip-ai">🤖 IA</span> emet l\'acció · '
-        '<span class="source-chip chip-py">🐍 Python</span> decideix la posició'
-        "</div>",
         unsafe_allow_html=True,
     )
 

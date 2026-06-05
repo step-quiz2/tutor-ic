@@ -359,17 +359,41 @@ if some_code:
 
 
 # =============================================================================
-# Panell de senyals sempre visible en mode docent (gating per ?docent=1)
+# Panell de senyals sempre visible — mode docent ACTIU PER DEFECTE
 # =============================================================================
-print("\nMode docent: gating i robustesa")
+print("\nMode docent: convenció de flag i robustesa")
 
-# _query_flag tolera un query_params sense .get (stub de test) i no peta.
-check("_query_flag amb stub sense .get → False (no peta)",
-      app._query_flag("docent") is False)
+# Convenció nova: docent és el DEFAULT. _query_flag respecta el default quan
+# el paràmetre no hi és, i tolera un query_params sense .get (stub de test)
+# sense petar.
+check("_query_flag(default=True) sense paràmetre → True",
+      app._query_flag("docent", default=True) is True)
+check("_query_flag(default=False) sense paràmetre → False",
+      app._query_flag("qualsevol", default=False) is False)
 
-# DOCENT_MODE és un bool ben definit (sota el stub de test, False).
+# DOCENT_MODE és un bool i, com que docent és el default, sota el stub de
+# test (que no aporta query_params reals) ha de ser True.
 check("DOCENT_MODE és bool", isinstance(app.DOCENT_MODE, bool))
-check("DOCENT_MODE False sota stub de test", app.DOCENT_MODE is False)
+check("DOCENT_MODE True per defecte", app.DOCENT_MODE is True)
+
+# Comprovació de la semàntica 0/1 amb un query_params real (dict-like) que
+# SÍ té .get, injectat temporalment a l'stub d'streamlit.
+class _QP:
+    def __init__(self, d): self._d = d
+    def get(self, k, default=None): return self._d.get(k, default)
+
+_st = sys.modules["streamlit"]
+_orig_qp = getattr(_st, "query_params", None)
+try:
+    _st.query_params = _QP({"docent": "0"})
+    check("?docent=0 → False (alumne)", app._query_flag("docent", True) is False)
+    _st.query_params = _QP({"docent": "1"})
+    check("?docent=1 → True (docent)", app._query_flag("docent", True) is True)
+    _st.query_params = _QP({})
+    check("sense docent a la URL → default True", app._query_flag("docent", True) is True)
+finally:
+    if _orig_qp is not None:
+        _st.query_params = _orig_qp
 
 # El panell ja NO depèn de cap toggle: render_inspector no crida st.toggle
 # ni fa servir la key "inspector_on". (Comprovem la CRIDA, no la paraula al
@@ -379,6 +403,13 @@ src_inspector = inspect.getsource(app.render_inspector)
 check("render_inspector ja no crida st.toggle",
       "st.toggle(" not in src_inspector
       and "key=\"inspector_on\"" not in src_inspector)
+
+# El panell ja no pinta el codi d'acció cru (stay/advance) ni repeteix la
+# línia d'atribució a cada torn: aquell soroll s'ha eliminat.
+check("panell no repeteix l'atribució per torn (.inspector-attr fora)",
+      "inspector-attr" not in src_inspector)
+check("panell no pinta el codi d'acció cru (.act-code fora del render)",
+      "act-code" not in src_inspector)
 
 # inspector_snapshot segueix sent pur i no muta l'estat que rep.
 st_probe = {
