@@ -359,6 +359,44 @@ if some_code:
 
 
 # =============================================================================
+# Panell de senyals sempre visible en mode docent (gating per ?docent=1)
+# =============================================================================
+print("\nMode docent: gating i robustesa")
+
+# _query_flag tolera un query_params sense .get (stub de test) i no peta.
+check("_query_flag amb stub sense .get → False (no peta)",
+      app._query_flag("docent") is False)
+
+# DOCENT_MODE és un bool ben definit (sota el stub de test, False).
+check("DOCENT_MODE és bool", isinstance(app.DOCENT_MODE, bool))
+check("DOCENT_MODE False sota stub de test", app.DOCENT_MODE is False)
+
+# El panell ja NO depèn de cap toggle: render_inspector no crida st.toggle
+# ni fa servir la key "inspector_on". (Comprovem la CRIDA, no la paraula al
+# docstring, que sí pot dir "sense toggle".)
+import inspect
+src_inspector = inspect.getsource(app.render_inspector)
+check("render_inspector ja no crida st.toggle",
+      "st.toggle(" not in src_inspector
+      and "key=\"inspector_on\"" not in src_inspector)
+
+# inspector_snapshot segueix sent pur i no muta l'estat que rep.
+st_probe = {
+    "history": [{
+        "action": "stay", "control_parse_ok": True,
+        "position_before": {"step": 1, "prereq": None},
+        "position_after": {"step": 1, "prereq": None},
+        "diagnostic": "INT_prob_param",
+    }],
+    "problem_id": "IC-001",
+}
+import copy
+before = copy.deepcopy(st_probe)
+_ = app.inspector_snapshot(st_probe)
+check("inspector_snapshot no muta l'estat", st_probe == before)
+
+
+# =============================================================================
 # Resum
 # =============================================================================
 print()

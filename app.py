@@ -35,10 +35,33 @@ import simulator as S
 # Configuració
 # =============================================================================
 
+def _query_flag(name):
+    """Llegeix un flag de la URL (?name=1) de manera defensiva. Streamlit
+    real exposa st.query_params amb .get(); alguns stubs de test no, així
+    que tolerem qualsevol forma i caiem a False sense petar a l'import."""
+    try:
+        qp = st.query_params
+        getter = getattr(qp, "get", None)
+        if callable(getter):
+            return getter(name) == "1"
+    except Exception:
+        pass
+    return False
+
+
+# Mode docent: s'activa de manera estable amb ?docent=1 a la URL. En aquest
+# mode l'app mostra un panell de senyals SEMPRE VISIBLE (no plegable, sense
+# toggle) al costat de la conversa, per a demostracions davant professorat.
+# Els senyals (acció stay/advance, codi de malentesa, origen IA/Python) són
+# vocabulari de docent: els alumnes (URL normal) no els veuen mai i mantenen
+# l'experiència socràtica intacta. El layout passa a "wide" només en docent
+# perquè hi càpiga la segona columna; en mode alumne queda "centered".
+DOCENT_MODE = _query_flag("docent")
+
 st.set_page_config(
     page_title="Tutor d'estadística",
     page_icon="🎓",
-    layout="centered",
+    layout="wide" if DOCENT_MODE else "centered",
     initial_sidebar_state="expanded",
 )
 
@@ -321,6 +344,21 @@ section[data-testid="stSidebar"] .stButton > button {
 }
 .inspector-warn { color: #8b0000; font-weight: 600; }
 .inspector-muted { color: rgba(0,0,0,0.45); }
+
+/* Títol del panell de senyals sempre visible (mode docent) i línia
+   d'atribució IA-vs-Python. El panell viu en una columna fixa a la dreta
+   de la conversa; no és plegable ni té toggle. */
+.signals-title {
+    font-weight: 700; font-size: 1.0rem; color: #334e68;
+    margin: 0 0 0.6rem 0;
+}
+.signals-title .signals-sub {
+    font-weight: 500; font-size: 0.78rem; color: rgba(0,0,0,0.45);
+}
+.inspector-attr {
+    font-size: 0.74rem; color: rgba(0,0,0,0.6);
+    margin: 0.55rem 0 0.2rem 0; line-height: 1.6;
+}
 </style>
 """
 
@@ -715,30 +753,32 @@ def render_thinking_card():
 
 
 def render_inspector(state):
-    """Panell "Com pensa el tutor" (Tasca 1).
+    """Panell de senyals "Com pensa el tutor" (Tasca 1).
 
     Mostra, torn a torn, la decisió DETERMINISTA que hi ha darrere de la
     resposta: quina acció ha emès el model, com ha quedat la posició
     (Python decideix on som, no el model), si el control block s'ha pogut
     llegir, i —si n'hi ha— quina malentesa conceptual s'ha diagnosticat.
 
-    Llegeix NOMÉS state['history']; no muta res. Va plegat darrere d'un
-    toggle (apagat per defecte) perquè el docent l'activi a propòsit durant
-    una demo. Activar-lo o desactivar-lo no canvia el comportament del tutor.
+    Llegeix NOMÉS state['history']; no muta res ni el comportament del tutor.
+
+    Visibilitat: aquest panell només es renderitza en MODE DOCENT
+    (?docent=1). Quan es renderitza, és SEMPRE VISIBLE — sense toggle ni
+    plegar — perquè en una demo en directe els senyals no desapareguin per
+    accident. Els alumnes (URL normal) no el veuen mai: els codis de
+    malentesa (INT_prob_param, etc.) són vocabulari de docent i veure'ls en
+    temps real podria condicionar com respon l'alumne.
     """
-    st.markdown("---")
-    on = st.toggle(
-        "🔍 Mode inspector (docent)",
-        key="inspector_on",
-        help="Mostra la decisió determinista del darrer torn (Python decideix "
-             "la posició; el model només emet una acció).",
+    st.markdown(
+        '<div class="signals-title">🔬 Senyals en directe '
+        '<span class="signals-sub">(mode docent)</span></div>',
+        unsafe_allow_html=True,
     )
-    if not on:
-        return
 
     snap = inspector_snapshot(state)
     if snap is None:
-        st.caption("Encara no hi ha cap torn per inspeccionar.")
+        st.caption("Encara no hi ha cap torn. Els senyals apareixeran "
+                   "després de la primera resposta de l'alumne.")
         return
 
     bg, border = snap["swatch"]
@@ -754,6 +794,16 @@ def render_inspector(state):
     st.markdown(
         f'<div class="inspector-line">Posició: '
         f'<code>{snap["before"]}</code> → <code>{snap["after"]}</code></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Atribució explícita (el cor de la tesi): la IA només EMET l'acció;
+    # Python DECIDEIX la posició i, si cal, injecta l'enunciat canònic.
+    st.markdown(
+        '<div class="inspector-attr">'
+        '<span class="source-chip chip-ai">🤖 IA</span> emet l\'acció · '
+        '<span class="source-chip chip-py">🐍 Python</span> decideix la posició'
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -811,25 +861,20 @@ def _trailing_tutor_cluster(state):
     return [c for c in cluster if c["role"] == "tutor"]
 
 
-def render_chat_view(state):
-    """Mostra el clúster de tutor del torn actual: la resposta del model
-    (acolorida per acció) i, si Python ha posat l'enunciat del pas següent,
-    la seva bombolla determinista a sota. Les bombolles llargues es
-    paginen en subpantalles amb un botó "Continuar"."""
+def _render_conversation_body(state):
+    """Renderitza el clúster de bombolles del tutor del torn actual i
+    retorna el `tutor_slot` (st.empty) perquè el caller hi pugui pintar
+    "Pensant…" durant la crida LLM. Extret de render_chat_view perquè es
+    pugui col·locar dins d'una columna en mode docent sense reindentar."""
     cluster = _trailing_tutor_cluster(state)
     color = determine_turn_color(state)
     badge = position_label(state)
     pid = state.get("problem_id", "")
-    # Índex base d'aquest clúster dins el display (per a claus estables de
-    # paginació). El clúster són les últimes bombolles de tutor; comptem
-    # quantes n'hi ha al display per derivar el seu índex inicial.
     display = state.get("display", [])
     base_idx = len(display) - len(cluster)
 
     render_layer_legend()
 
-    # st.empty() ens permet substituir el contingut durant la crida
-    # LLM amb el placeholder "Pensant…".
     tutor_slot = st.empty()
     with tutor_slot.container():
         if not cluster:
@@ -837,21 +882,12 @@ def render_chat_view(state):
         for i, item in enumerate(cluster):
             bubble_key = f"{pid}#{base_idx + i}"
             if item["source"] == "py" and i > 0:
-                # Pregunta canònica injectada per Python (després del reply IA):
-                # estil determinista (vora discontínua) per marcar-la com a
-                # garantida pel sistema.
                 render_paginated_card(
                     bubble_key, item["content"], color="deterministic",
                     badge=badge, source="py", label="Pregunta.",
                 )
             elif item["source"] == "py":
                 if state.get("turn_count", 0) == 0:
-                    # Obertura: el contingut és l'enunciat del problema + la
-                    # pregunta del Pas 1, enganxats. Els separem en DUES
-                    # bombolles: l'enunciat a dalt ("Enunciat.") i la pregunta
-                    # just a sota ("Pregunta."). L'enunciat porta el badge i el
-                    # xip; la pregunta, com que és continuació del mateix
-                    # missatge, no els repeteix.
                     enunciat_txt, pregunta_txt = _split_opening(
                         pid, item["content"]
                     )
@@ -865,8 +901,6 @@ def render_chat_view(state):
                             badge=None, source="", label="Pregunta.",
                         )
                 else:
-                    # Bombolla py solitària fora de l'obertura (p. ex. mode
-                    # de reserva): color d'acció habitual, xip Python.
                     render_paginated_card(
                         bubble_key, item["content"], color=color, badge=badge,
                         source="py", label="Pregunta.",
@@ -876,6 +910,28 @@ def render_chat_view(state):
                     bubble_key, item["content"], color=color, badge=badge,
                     source="ai", label="Pregunta.",
                 )
+    return tutor_slot
+
+
+def render_chat_view(state):
+    """Mostra el clúster de tutor del torn actual: la resposta del model
+    (acolorida per acció) i, si Python ha posat l'enunciat del pas següent,
+    la seva bombolla determinista a sota. Les bombolles llargues es
+    paginen en subpantalles amb un botó "Continuar".
+
+    En MODE DOCENT (?docent=1) la conversa es renderitza en una columna a
+    l'esquerra i el panell de senyals SEMPRE VISIBLE en una columna a la
+    dreta. En mode alumne, la conversa ocupa l'amplada habitual i no hi ha
+    panell de senyals."""
+    if DOCENT_MODE:
+        col_conv, col_signals = st.columns([2, 1], gap="large")
+        with col_conv:
+            tutor_slot = _render_conversation_body(state)
+        with col_signals:
+            with st.container(border=True):
+                render_inspector(state)
+    else:
+        tutor_slot = _render_conversation_body(state)
 
     with st.sidebar:
         st.markdown("### Accions")
@@ -887,7 +943,6 @@ def render_chat_view(state):
             "🚪 Acabar sessió",
             key="btn_end",
         )
-        render_inspector(state)
 
     user_input = st.chat_input("Escriu la teva resposta…")
 
