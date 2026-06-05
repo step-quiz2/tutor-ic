@@ -317,6 +317,31 @@ def compute_quality_signals(state: dict) -> dict:
     parse_failures = sum(1 for e in history
                          if e.get("control_parse_ok") is False)
 
+    # Tally de diagnòstics (Tasca 4). Comptem quants cops s'ha registrat
+    # cada codi de malentesa, globalment i imputat al pas on estava
+    # l'alumne ABANS de la crida (mateixa convenció que turns_per_step).
+    # Els diagnòstics None (avenços, sense diagnòstic) no compten.
+    diagnostic_counts = {}
+    diagnostic_per_step = {n: {} for n in range(1, total_steps + 1)}
+    for e in history:
+        code = e.get("diagnostic")
+        if not code:
+            continue
+        diagnostic_counts[code] = diagnostic_counts.get(code, 0) + 1
+        pb = e.get("position_before", {})
+        st_num = pb.get("step")
+        if not pb.get("prereq") and st_num in diagnostic_per_step:
+            d = diagnostic_per_step[st_num]
+            d[code] = d.get(code, 0) + 1
+
+    # Malentesa dominant per pas (codi més freqüent, o None si cap).
+    dominant_diagnostic_per_step = {}
+    for n, counts in diagnostic_per_step.items():
+        if counts:
+            dominant_diagnostic_per_step[n] = max(counts, key=counts.get)
+        else:
+            dominant_diagnostic_per_step[n] = None
+
     # Temps total i mitjana per torn.
     #
     # Important: elapsed_total NO es calcula amb `time.time() - started_at`
@@ -355,6 +380,9 @@ def compute_quality_signals(state: dict) -> dict:
         "turns_in_prereq": turns_in_prereq,
         "hint_requests": hint_requests,
         "parse_failures": parse_failures,
+        "diagnostic_counts": diagnostic_counts,
+        "diagnostic_per_step": diagnostic_per_step,
+        "dominant_diagnostic_per_step": dominant_diagnostic_per_step,
     }
 
 
@@ -368,6 +396,13 @@ def format_quality_signals(qs: dict) -> str:
     tps = ", ".join(tps_parts) if tps_parts else "(cap torn registrat)"
     prereq_info = (f"sí ({qs['turns_in_prereq']} torns)"
                    if qs["used_prereq"] else "no")
+    diag_counts = qs.get("diagnostic_counts") or {}
+    if diag_counts:
+        diag_parts = [f"{code}: {n}" for code, n in
+                      sorted(diag_counts.items(), key=lambda kv: -kv[1])]
+        diag_line = ", ".join(diag_parts)
+    else:
+        diag_line = "(cap)"
     lines = [
         "=== Quality signals ===",
         f"  Completat: {qs['completed']}",
@@ -380,6 +415,7 @@ def format_quality_signals(qs: dict) -> str:
         f"  Reforç usat: {prereq_info}",
         f"  Sol·licituds de pista: {qs['hint_requests']}    "
         f"Parse failures: {qs['parse_failures']}",
+        f"  Malentesos (codi: cops): {diag_line}",
     ]
     return "\n".join(lines)
 
@@ -654,6 +690,7 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
             "tutor_reply": result["reply"],
             "action": result["action"],
             "objectives_met": result["objectives_met"],
+            "diagnostic": result.get("diagnostic"),
             "control_parse_ok": result["control_parse_ok"],
             "position_before": position_before,
             "position_after": position_after,

@@ -198,7 +198,8 @@ def _is_retriable(err: Exception) -> bool:
 
 
 def _format_position_marker(current_position: dict,
-                            total_steps: int = None) -> str:
+                            total_steps: int = None,
+                            diagnostic_options: list = None) -> str:
     """Construeix la línia de marcador de posició que s'antepondrà al
     darrer missatge user. El system prompt v1.1 documenta aquest
     format i instrueix el model a respectar-lo com a font de veritat
@@ -218,6 +219,11 @@ def _format_position_marker(current_position: dict,
             None, es deriva de `PB.PROBLEM` (back-compat). En contextos
             multi-problema, el caller (tutor_turn) ha de passar-lo
             explícitament a partir del seu paràmetre `problem`.
+        diagnostic_options: codis de diagnòstic vàlids per al pas actual
+            (Tasca 4). Si es passa, s'afegeix una segona línia al marcador
+            recordant al model els codis que pot posar al camp `diagnostic`
+            del control block. És infraestructura del sistema, invisible per
+            a l'alumne, igual que la línia de posició.
 
     Si no podem determinar la posició (current_position buit o sense
     camps reconeixibles), retornem cadena buida — el model continua
@@ -231,16 +237,23 @@ def _format_position_marker(current_position: dict,
 
     if prereq:
         if step is not None:
-            return (f"[Posició actual: reforç {prereq} activat "
+            base = (f"[Posició actual: reforç {prereq} activat "
                     f"(tornaràs al Pas {step} en acabar)]")
-        return f"[Posició actual: reforç {prereq} activat]"
-
-    if step is not None:
+        else:
+            base = f"[Posició actual: reforç {prereq} activat]"
+    elif step is not None:
         if total_steps is None:
             total_steps = len(PB.PROBLEM["passos"])
-        return f"[Posició actual: Pas {step} de {total_steps}]"
+        base = f"[Posició actual: Pas {step} de {total_steps}]"
+    else:
+        return ""
 
-    return ""
+    if diagnostic_options:
+        codes = ", ".join(diagnostic_options)
+        base += (f"\n[Codis de diagnòstic vàlids ara: {codes}. "
+                 f"Posa'n un al camp \"diagnostic\" del control block si "
+                 f"fas stay/retreat; posa null si avances.]")
+    return base
 
 
 def _call(system_instruction: str, contents: list) -> str:
@@ -297,9 +310,17 @@ def _split_reply_and_control(raw_output: str):
 
 def _parse_control_block(text: str) -> dict:
     """Parseja el JSON del control block. Retorna sempre un dict amb
-    `action` i `objectives_met` ben formats, recorrent a "stay" per
-    defecte si el JSON falla o té camps inesperats. El camp
+    `action`, `objectives_met` i `diagnostic` ben formats, recorrent a
+    "stay" per defecte si el JSON falla o té camps inesperats. El camp
     `_parse_error` indica si hi va haver fallback.
+
+    El parser és deliberadament ximple respecte al `diagnostic`: només el
+    llegeix com a string (o None) i NO el valida contra cap catàleg. La
+    validació/normalització del codi contra el catàleg del pas la fa el
+    caller (tutor_turn → PB.normalize_diagnostic), que és qui coneix el
+    problema i el pas actuals. Un `diagnostic` absent o mal format NO és un
+    error de parse: és opcional. Només JSON malformat o `action` absent
+    disparen el fallback-a-stay (i marquen `_parse_error`).
     """
     text = text.strip()
     # Tolerar fences ```json ... ``` per si el model les afegeix.
@@ -315,6 +336,7 @@ def _parse_control_block(text: str) -> dict:
         return {
             "action": "stay",
             "objectives_met": [],
+            "diagnostic": None,
             "_parse_error": True,
         }
 
@@ -326,9 +348,17 @@ def _parse_control_block(text: str) -> dict:
     if not isinstance(objectives, list):
         objectives = []
 
+    # `diagnostic`: només acceptem string en cru aquí. Qualsevol altra cosa
+    # (absent, null, número, llista...) es coerciona a None. La normalització
+    # contra el catàleg del pas la fa el caller.
+    diagnostic = data.get("diagnostic")
+    if not isinstance(diagnostic, str):
+        diagnostic = None
+
     return {
         "action": action,
         "objectives_met": objectives,
+        "diagnostic": diagnostic,
         "_parse_error": False,
     }
 
@@ -390,12 +420,16 @@ def _fallback_turn(problem: dict, current_position: dict,
     encerts = sum(1 for k in claus if k and k in resp)
 
     pistes = PB.step_hints(pid, step) if step else []
+    # Codi probable d'aquest pas (per anotar el diagnòstic en els stays del
+    # mode reserva). El fallback no "entén", però el typical_error_label del
+    # pas és l'aposta determinista raonable i evita un panell buit.
+    likely = PB.likely_diagnostic_for_step(pid, step) if step else None
 
     if demana_pista:
         pista = pistes[0] if pistes else (
             "Comença pel càlcul concret que demana l'enunciat i mira què "
             "en surt.")
-        return _fb_result(f"Pista: {pista}", "stay")
+        return _fb_result(f"Pista: {pista}", "stay", diagnostic=likely)
 
     # Llindar deliberadament permissiu (el fallback ha de deixar avançar
     # la demo, no fer de porter estricte).
@@ -403,17 +437,23 @@ def _fallback_turn(problem: dict, current_position: dict,
         return _fb_result("Molt bé, ho has argumentat correctament. "
                           "Avancem.", "advance")
 
-    pista = pistes[0] if pistes else (
-        "Vigila de no confondre que una associació sigui real amb que "
-        "sigui causal.")
-    return _fb_result(f"Encara no del tot. Pista: {pista}", "stay")
+    # Stay per error conceptual: si el pas té una pista mapejada al codi
+    # probable, fem-la servir; si no, la primera pista pre-escrita.
+    pista = PB.hint_for_diagnostic(pid, step, likely) if step else None
+    if not pista:
+        pista = pistes[0] if pistes else (
+            "Vigila de no confondre que una associació sigui real amb que "
+            "sigui causal.")
+    return _fb_result(f"Encara no del tot. Pista: {pista}", "stay",
+                      diagnostic=likely)
 
 
-def _fb_result(reply: str, action: str) -> dict:
+def _fb_result(reply: str, action: str, diagnostic: str = None) -> dict:
     return {
         "reply": reply,
         "action": action,
         "objectives_met": [],
+        "diagnostic": diagnostic,
         "n_api_calls": 0,
         "mode": "py",
         "raw_output": "",
@@ -451,6 +491,9 @@ def tutor_turn(problem: dict, current_position: dict,
             "reply": str,              # text per a l'alumne (markdown)
             "action": str,             # "stay" | "advance" | "retreat_to_prereq"
             "objectives_met": list,    # objectius assolits ([] per defecte)
+            "diagnostic": str|None,    # codi de malentesa del catàleg del pas
+                                       #   (Tasca 4); None si avança o no en té.
+                                       #   NO influeix mai en apply_action.
             "n_api_calls": int,        # sempre 1 en aquesta versió
             "raw_output": str,         # text brut del model per al rastre
             "control_parse_ok": bool,  # False si el control va caure a default
@@ -515,6 +558,9 @@ def tutor_turn(problem: dict, current_position: dict,
     position_marker = _format_position_marker(
         current_position,
         total_steps=len(problem["passos"]),
+        diagnostic_options=PB.allowed_diagnostics(
+            problem["id"], current_position.get("step")
+        ),
     )
     last_user_idx = len(transcript) - 1  # garantit > 0 per invariants
 
@@ -537,13 +583,27 @@ def tutor_turn(problem: dict, current_position: dict,
         control = _parse_control_block(control_text)
         parse_ok = not control.get("_parse_error", False)
     else:
-        control = {"action": "stay", "objectives_met": []}
+        control = {"action": "stay", "objectives_met": [], "diagnostic": None}
         parse_ok = False
+
+    # Normalització del diagnòstic contra el catàleg del pas actual. Punt
+    # únic de validació (el parser no toca el catàleg). Codi desconegut →
+    # GEN_other; absent/mal format → None. Quan l'acció és "advance" el
+    # diagnòstic no té sentit (l'alumne ha encertat): el forcem a None per
+    # mantenir la semàntica "diagnostic = malentesa en curs".
+    raw_diag = control.get("diagnostic")
+    if control["action"] == "advance":
+        diagnostic = None
+    else:
+        diagnostic = PB.normalize_diagnostic(
+            problem["id"], current_position.get("step"), raw_diag
+        )
 
     return {
         "reply": reply,
         "action": control["action"],
         "objectives_met": control["objectives_met"],
+        "diagnostic": diagnostic,
         "n_api_calls": 1,
         "mode": "ai",
         "raw_output": raw_output,

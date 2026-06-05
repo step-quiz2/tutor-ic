@@ -786,6 +786,7 @@ def render_chat_view(state):
         "tutor_reply": result["reply"],
         "action": result["action"],
         "objectives_met": result["objectives_met"],
+        "diagnostic": result.get("diagnostic"),
         "control_parse_ok": result["control_parse_ok"],
         "position_before": position_before,
         "position_after": position_after,
@@ -856,6 +857,39 @@ def render_summary_view(state):
         s = "s" if qs["turns_in_prereq"] != 1 else ""
         st.markdown(f"**Reforç PRE-CONFOUNDER** — {qs['turns_in_prereq']} torn{s}")
         st.progress(qs["turns_in_prereq"] / max_count)
+
+    # Malentesos detectats per pas (Tasca 4). Traduïm els codis del catàleg
+    # a la seva descripció humana per al docent. Només mostrem la secció si
+    # s'ha registrat algun diagnòstic durant la sessió.
+    diag_counts = qs.get("diagnostic_counts") or {}
+    if diag_counts:
+        st.markdown("---")
+        st.markdown("### Malentesos detectats")
+        pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+        catalog = PB.error_catalog(pid)
+        dominant = qs.get("dominant_diagnostic_per_step") or {}
+        per_step = qs.get("diagnostic_per_step") or {}
+        any_row = False
+        for step in sorted(per_step.keys()):
+            code = dominant.get(step)
+            if not code:
+                continue
+            any_row = True
+            n = per_step[step].get(code, 0)
+            desc = catalog.get(code, "")
+            s = "s" if n != 1 else ""
+            st.markdown(
+                f"**Pas {step}** — malentesa dominant: `{code}` "
+                f"({n} torn{s})"
+            )
+            if desc:
+                st.markdown(
+                    f"<div style='color:#666; font-size:0.95em; "
+                    f"margin:-0.4rem 0 0.6rem 0;'>{desc}</div>",
+                    unsafe_allow_html=True,
+                )
+        if not any_row:
+            st.markdown("Cap malentesa conceptual recurrent registrada.")
 
     st.markdown("---")
 

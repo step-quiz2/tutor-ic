@@ -546,7 +546,7 @@ Cada resposta TEUA acaba amb un bloc de control. Format exacte:
 <El missatge a l'alumne, en markdown, tantes línies com calgui>
 
 ---CONTROL---
-{"action": "stay|advance|retreat_to_prereq", "objectives_met": []}
+{"action": "stay|advance|retreat_to_prereq", "objectives_met": [], "diagnostic": "<codi|null>"}
 ```
 
 Camps:
@@ -555,6 +555,16 @@ Camps:
   possibles. `stay` és el default segur — usa'l sempre que dubtis.
 - `objectives_met`: llista (pots deixar-la buida `[]` per ara).
   Reservada per a futura granularitat per objectius d'aprenentatge.
+- `diagnostic`: nomena la MALENTESA conceptual que l'alumne mostra ARA.
+  - Si fas `action="stay"` o `action="retreat_to_prereq"`: posa el codi
+    del catàleg d'errors que millor descrigui el seu error actual. Els
+    codis vàlids per al pas en curs te'ls recordo a cada torn dins el
+    marcador de posició (segona línia entre claudàtors). Si cap codi
+    encaixa, posa `"GEN_other"`.
+  - Si fas `action="advance"`: posa `null` (l'alumne ha encertat, no hi
+    ha malentesa que diagnosticar).
+  - `diagnostic` és **metadada**: NO canvia el que dius a l'alumne ni el
+    flux. Va SEMPRE dins el JSON del control block, mai al missatge visible.
 
 **El separador `---CONTROL---` és literal**: tres guions, paraula
 CONTROL en majúscules entre tres guions. Sense aquest separador, el

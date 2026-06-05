@@ -709,6 +709,89 @@ def prereq_question(problem_id):
 
 
 # =============================================================================
+# Accessors del catàleg d'errors (Tasca 4: el control block diagnostica)
+# =============================================================================
+# El `diagnostic` que retorna el model nomena la MALENTESA conceptual en curs
+# fent servir un codi del catàleg d'errors del problema. Aquests helpers
+# exposen els codis i les seves descripcions a la capa LLM (per injectar-los
+# al position marker del pas actual) i al caller (per validar i normalitzar el
+# codi rebut). El catàleg sempre conté `GEN_other` com a calaix de sastre.
+
+# Codi que es retorna quan el model no diagnostica res (alumne encertant /
+# acció d'avançar) o quan el codi rebut no encaixa al catàleg del pas.
+GEN_OTHER = "GEN_other"
+
+
+def error_catalog(problem_id):
+    """Catàleg d'errors del problema: {codi: descripció}."""
+    return PROBLEMS[problem_id].get("error_catalog", {})
+
+
+def allowed_diagnostics(problem_id, step_num=None):
+    """Codis de diagnòstic vàlids per al pas indicat (o per a tot el
+    problema si step_num és None).
+
+    Estratègia: oferim al model el catàleg sencer del problema com a opcions
+    (els catàlegs són curts i els codis són transversals als passos), i a més
+    destaquem el `typical_error_label` del pas actual com a candidat probable.
+    Sempre s'hi inclou `GEN_other`. La validació final (codi rebut → catàleg)
+    la fa el caller; aquí només enumerem el que és acceptable.
+
+    Retorna una llista de codis (strings), amb `GEN_other` garantit al final.
+    """
+    catalog = error_catalog(problem_id)
+    codes = [c for c in catalog.keys() if c != GEN_OTHER]
+    if GEN_OTHER not in codes:
+        codes.append(GEN_OTHER)
+    return codes
+
+
+def likely_diagnostic_for_step(problem_id, step_num):
+    """`typical_error_label` del pas (codi més probable), o None si no en té
+    o el pas no existeix. Pur ajut per pista/prompt; mai obligatori."""
+    try:
+        paso = _step_by_id(problem_id, step_num)
+    except (IndexError, KeyError, TypeError):
+        return None
+    return paso.get("typical_error_label")
+
+
+def normalize_diagnostic(problem_id, step_num, code):
+    """Normalitza un codi de diagnòstic rebut del model.
+
+    - None / "" / no-string → None (cap diagnòstic).
+    - codi del catàleg del problema → es retorna tal qual.
+    - codi desconegut → GEN_other (l'spec: out-of-catalog → GEN_other).
+
+    Aquesta funció és el punt únic de validació del caller. El parser de
+    llm.py es manté "ximple" i no valida contra el catàleg.
+    """
+    if not isinstance(code, str):
+        return None
+    code = code.strip()
+    if not code or code.lower() == "null":
+        return None
+    catalog = error_catalog(problem_id)
+    if code in catalog:
+        return code
+    return GEN_OTHER
+
+
+def hint_for_diagnostic(problem_id, step_num, code):
+    """Pista mapejada a un codi de diagnòstic, si el pas en defineix via
+    `pistes_per_error: {codi: pista}`. Si no n'hi ha cap per al codi, retorna
+    None i el caller cau a la pista per defecte (`step_hints(...)[0]`)."""
+    if not code:
+        return None
+    try:
+        paso = _step_by_id(problem_id, step_num)
+    except (IndexError, KeyError, TypeError):
+        return None
+    mapping = paso.get("pistes_per_error") or {}
+    return mapping.get(code)
+
+
+# =============================================================================
 # Back-compat: noms globals apuntant al problema per defecte
 # =============================================================================
 # Codi antic que accedeix directament a PB.PROBLEM (per exemple, tests
