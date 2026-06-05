@@ -294,6 +294,33 @@ section[data-testid="stSidebar"] .stButton > button {
 .summary-header p { margin: 0; opacity: 0.85; font-size: 1.0rem; }
 .summary-success { background: #e8f5e9; border: 2px solid #2e7d32; color: #1b5e20; }
 .summary-neutral { background: #f5f5f5; border: 2px solid #9e9e9e; color: #424242; }
+
+/* Panell inspector (Tasca 1): "Com pensa el tutor". Mostra, torn a torn,
+   la decisió DETERMINISTA de Python (acció, transició, parse) llegint només
+   state["history"]. El swatch d'acció reusa els mateixos colors que la
+   targeta del tutor, de manera que sempre coincideixen. */
+.inspector-row {
+    display: flex; align-items: center; gap: 0.45rem;
+    font-size: 0.86rem; margin: 0.35rem 0 0.5rem 0;
+}
+.inspector-row .sw {
+    width: 0.9rem; height: 0.9rem; border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.25); display: inline-block; flex: none;
+}
+.inspector-row .act-code {
+    margin-left: auto; background: rgba(0,0,0,0.06);
+    padding: 0.05rem 0.4rem; border-radius: 4px; font-size: 0.78rem;
+}
+.inspector-line {
+    font-size: 0.8rem; color: rgba(0,0,0,0.68); margin: 0.3rem 0;
+    line-height: 1.45;
+}
+.inspector-line code {
+    background: rgba(0,0,0,0.06); padding: 0.03em 0.32em; border-radius: 3px;
+    font-size: 0.95em;
+}
+.inspector-warn { color: #8b0000; font-weight: 600; }
+.inspector-muted { color: rgba(0,0,0,0.45); }
 </style>
 """
 
@@ -436,6 +463,67 @@ def position_label(state):
         total = len(PB.PROBLEMS[pid]["problem"]["passos"])
         return f"Pas {step} de {total}"
     return None
+
+
+# =============================================================================
+# Inspector (Tasca 1): dades del darrer torn
+# =============================================================================
+
+# Etiquetes humanes de l'acció pedagògica (en català, per al docent).
+ACTION_LABELS = {
+    "advance": "avança",
+    "stay": "es queda",
+    "retreat_to_prereq": "retrocedeix al reforç",
+}
+
+# Color (bg, vora) de cada classe semàntica. Són EXACTAMENT els mateixos
+# valors que les regles .tutor-* del CSS, de manera que el swatch de
+# l'inspector coincideix sempre amb la targeta del tutor del mateix torn.
+ACTION_SWATCH = {
+    "green": ("#e8f5e9", "#2e7d32"),
+    "yellow": ("#fff8e1", "#ef6c00"),
+    "gray": ("#f5f5f5", "#757575"),
+    "bordeaux": ("#fbe9e7", "#8b0000"),
+    "neutral": ("#e3f2fd", "#1976d2"),
+}
+
+
+def inspector_snapshot(state):
+    """Resum del darrer torn per al panell inspector. Funció PURA (sense
+    Streamlit) per poder-se testejar: només LLEGEIX state['history'] i les
+    posicions desades; no muta res. Retorna None si encara no hi ha torns.
+
+    La clau `color` ve de determine_turn_color(state) — la mateixa funció
+    que pinta la targeta del tutor — així el swatch i la targeta coincideixen.
+    """
+    history = state.get("history") or []
+    if not history:
+        return None
+    latest = history[-1]
+    action = latest.get("action", "stay")
+    color = determine_turn_color(state)
+    parse_ok = latest.get("control_parse_ok", True)
+    before = latest.get("position_before") or {}
+    after = latest.get("position_after") or {}
+    diagnostic = latest.get("diagnostic")
+
+    desc = ""
+    if diagnostic:
+        pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+        desc = PB.error_catalog(pid).get(diagnostic, "")
+
+    return {
+        "action": action,
+        "action_label": ACTION_LABELS.get(action, action),
+        "color": color,
+        "swatch": ACTION_SWATCH.get(color, ACTION_SWATCH["neutral"]),
+        "parse_ok": bool(parse_ok),
+        "before": S.position_summary_from(before) if before else "—",
+        "after": S.position_summary_from(after) if after else "—",
+        "diagnostic": diagnostic,
+        "diagnostic_desc": desc,
+        "elapsed_seconds": latest.get("elapsed_seconds"),
+    }
 
 
 # =============================================================================
@@ -626,6 +714,76 @@ def render_thinking_card():
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_inspector(state):
+    """Panell "Com pensa el tutor" (Tasca 1).
+
+    Mostra, torn a torn, la decisió DETERMINISTA que hi ha darrere de la
+    resposta: quina acció ha emès el model, com ha quedat la posició
+    (Python decideix on som, no el model), si el control block s'ha pogut
+    llegir, i —si n'hi ha— quina malentesa conceptual s'ha diagnosticat.
+
+    Llegeix NOMÉS state['history']; no muta res. Va plegat darrere d'un
+    toggle (apagat per defecte) perquè el docent l'activi a propòsit durant
+    una demo. Activar-lo o desactivar-lo no canvia el comportament del tutor.
+    """
+    st.markdown("---")
+    on = st.toggle(
+        "🔍 Mode inspector (docent)",
+        key="inspector_on",
+        help="Mostra la decisió determinista del darrer torn (Python decideix "
+             "la posició; el model només emet una acció).",
+    )
+    if not on:
+        return
+
+    snap = inspector_snapshot(state)
+    if snap is None:
+        st.caption("Encara no hi ha cap torn per inspeccionar.")
+        return
+
+    bg, border = snap["swatch"]
+    warn_mark = " ⚠" if not snap["parse_ok"] else ""
+    st.markdown(
+        f'<div class="inspector-row">'
+        f'<span class="sw" style="background:{bg};border-color:{border}"></span>'
+        f'<b>Acció: {snap["action_label"]}</b>'
+        f'<span class="act-code">{snap["action"]}{warn_mark}</span>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="inspector-line">Posició: '
+        f'<code>{snap["before"]}</code> → <code>{snap["after"]}</code></div>',
+        unsafe_allow_html=True,
+    )
+
+    if not snap["parse_ok"]:
+        st.markdown(
+            '<div class="inspector-line inspector-warn">'
+            "⚠ El control block no s'ha pogut llegir; s'ha aplicat "
+            "<code>stay</code> per defecte.</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Malentesa diagnosticada (Tasca 4). És metadada: NO altera el flux.
+    if snap["diagnostic"]:
+        desc = snap["diagnostic_desc"]
+        desc_html = (
+            f' — <span class="inspector-muted">{desc}</span>' if desc else ""
+        )
+        st.markdown(
+            f'<div class="inspector-line">Malentesa: '
+            f'<code>{snap["diagnostic"]}</code>{desc_html}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="inspector-line inspector-muted">'
+            "Sense malentesa registrada (l'alumne va per bon camí).</div>",
+            unsafe_allow_html=True,
+        )
+
+
 # =============================================================================
 # Render: vista de conversa
 # =============================================================================
@@ -729,6 +887,7 @@ def render_chat_view(state):
             "🚪 Acabar sessió",
             key="btn_end",
         )
+        render_inspector(state)
 
     user_input = st.chat_input("Escriu la teva resposta…")
 

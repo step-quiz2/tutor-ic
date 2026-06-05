@@ -35,6 +35,7 @@ sys.modules["google.genai.types"] = types.ModuleType("google.genai.types")
 os.environ.setdefault("GEMINI_API_KEY", "fake-for-tests")
 
 import app  # noqa: E402
+import problem as PB  # noqa: E402
 
 
 PASSED = 0
@@ -283,6 +284,78 @@ check("None NO peta i NO és sortida", not app.is_exit_command(None))
 
 # La marca de pista no s'ha de confondre mai amb una comanda de sortida.
 check("HINT_MARKER NO és sortida", not app.is_exit_command(app.HINT_MARKER))
+
+
+# =============================================================================
+# inspector_snapshot (Tasca 1) — funció pura de dades del panell docent
+# =============================================================================
+print("\nTest 11 — inspector_snapshot: estat sense torns")
+check("història buida → None",
+      app.inspector_snapshot({"history": []}) is None)
+check("sense clau history → None",
+      app.inspector_snapshot({}) is None)
+
+print("\nTest 12 — inspector_snapshot: advance net → verd")
+st_advance = {
+    "problem_id": PB.DEFAULT_PROBLEM_ID,
+    "current_step": 2, "active_prereq": None, "step_before_prereq": None,
+    "history": [{
+        "action": "advance", "control_parse_ok": True,
+        "position_before": {"step": 1, "prereq": None},
+        "position_after": {"step": 2, "prereq": None},
+        "diagnostic": None,
+    }],
+}
+snap = app.inspector_snapshot(st_advance)
+check("action == advance", snap["action"] == "advance")
+check("color verd en advance net", snap["color"] == "green")
+check("etiqueta humana 'avança'", snap["action_label"] == "avança")
+check("swatch coincideix amb ACTION_SWATCH[verd]",
+      snap["swatch"] == app.ACTION_SWATCH["green"])
+check("parse_ok True", snap["parse_ok"] is True)
+check("transició 'pas 1' → 'pas 2'",
+      snap["before"] == "pas 1" and snap["after"] == "pas 2")
+check("sense diagnòstic en advance", snap["diagnostic"] is None)
+
+print("\nTest 13 — inspector_snapshot: swatch == color de la targeta del tutor")
+# Invariant clau de la Tasca 1: el swatch usa el MATEIX determine_turn_color.
+check("color del snapshot == determine_turn_color(state)",
+      snap["color"] == app.determine_turn_color(st_advance))
+
+print("\nTest 14 — inspector_snapshot: stay amb parse fallit → ⚠ i gris")
+st_stay_bad = {
+    "problem_id": PB.DEFAULT_PROBLEM_ID,
+    "current_step": 1, "active_prereq": None, "step_before_prereq": None,
+    "history": [{
+        "action": "stay", "control_parse_ok": False,
+        "position_before": {"step": 1, "prereq": None},
+        "position_after": {"step": 1, "prereq": None},
+        "diagnostic": None,
+    }],
+}
+snap_bad = app.inspector_snapshot(st_stay_bad)
+check("color gris en stay", snap_bad["color"] == "gray")
+check("parse_ok False (mostrarà ⚠)", snap_bad["parse_ok"] is False)
+
+print("\nTest 15 — inspector_snapshot: diagnòstic resolt a descripció del catàleg")
+pid = PB.DEFAULT_PROBLEM_ID
+catalog = PB.error_catalog(pid)
+some_code = next(iter(catalog)) if catalog else None
+if some_code:
+    st_diag = {
+        "problem_id": pid,
+        "current_step": 1, "active_prereq": None, "step_before_prereq": None,
+        "history": [{
+            "action": "stay", "control_parse_ok": True,
+            "position_before": {"step": 1, "prereq": None},
+            "position_after": {"step": 1, "prereq": None},
+            "diagnostic": some_code,
+        }],
+    }
+    snap_d = app.inspector_snapshot(st_diag)
+    check("diagnostic propagat", snap_d["diagnostic"] == some_code)
+    check("descripció del catàleg resolta",
+          snap_d["diagnostic_desc"] == catalog[some_code])
 
 
 # =============================================================================
