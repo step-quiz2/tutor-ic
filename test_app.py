@@ -29,6 +29,18 @@ class _StreamlitStub:
         return None
 
 sys.modules["streamlit"] = _StreamlitStub()
+# app.py fa `import streamlit.components.v1 as components` (scroll de la
+# idea 3). Per a un import encadenat, Python resol els atributs sobre
+# l'objecte ja a sys.modules["streamlit"]; per això no n'hi ha prou de
+# registrar els submòduls a sys.modules, cal també penjar-los com a
+# atributs de l'stub arrel. `html` és un noop com la resta de Streamlit.
+_components_v1 = types.ModuleType("streamlit.components.v1")
+_components_v1.html = lambda *a, **kw: None
+_components = types.ModuleType("streamlit.components")
+_components.v1 = _components_v1
+sys.modules["streamlit"].components = _components
+sys.modules["streamlit.components"] = _components
+sys.modules["streamlit.components.v1"] = _components_v1
 sys.modules["google"] = types.ModuleType("google")
 sys.modules["google.genai"] = types.ModuleType("google.genai")
 sys.modules["google.genai.types"] = types.ModuleType("google.genai.types")

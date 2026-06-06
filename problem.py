@@ -99,9 +99,9 @@ S'obté un interval de confiança del 95% per a la mitjana (μ):
         {
             "id": 1,
             "text": (
-                """El nivell de confiança del 95% que apareix a l'enunciat fa referència a una probabilitat. 
+                """Explica, amb les teves paraules, com interpretes l'interval següent que té una confiança del 95%:
 
-Sobre què fa referència aquesta probabilitat?"""
+[3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
             ),
             "expected_summary": (
                 "El 95% és una propietat del procediment: si "
@@ -118,9 +118,9 @@ Sobre què fa referència aquesta probabilitat?"""
             "typical_error_label": "INT_prob_param",
             "key_concepts": ["param_vs_stat"],
             "canonical_question": (
-                """El nivell de confiança del 95% que apareix a l'enunciat fa referència a una probabilitat. 
+                """Explica, amb les teves paraules, com interpretes l'interval següent que té una confiança del 95%:
 
-Sobre què fa referència aquesta probabilitat?"""
+[3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
             ),
             "pistes": [
                 """La mitjana mostral i l'interval que en surt canviarien si repetíssim l'estudi; en canvi, la mitjana (μ) no canviaria.""",

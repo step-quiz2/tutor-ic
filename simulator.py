@@ -254,6 +254,39 @@ def position_dict(state):
     return {"step": state["current_step"], "prereq": state["active_prereq"]}
 
 
+def detect_cortesia_interrogativa(text: str) -> bool:
+    """True si una resposta del tutor obre amb una fórmula de cortesia
+    condicional que la regla d'estil del prompt prohibeix (idea 6).
+
+    Conservador a propòsit: només caça les tres fórmules que la regla
+    nomena explícitament («Podries…?», «Series capaç de…?», «T'importaria…?»)
+    quan apareixen a l'INICI d'una frase i la frase acaba en interrogant.
+    No marca preguntes socràtiques genuïnes («Per què…?», «Què té de
+    diferent…?»), que són bona pedagogia. L'objectiu és un senyal fiable:
+    si el comptador puja, la regla del prompt no s'està respectant — no
+    una xarxa que enganxi qualsevol pregunta.
+
+    Només s'ha d'aplicar a torns generats per la IA; el mode de reserva
+    (Python) té text fix i no l'ha de jutjar aquesta mètrica.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False
+    import re as _re
+    # Inici de frase: principi del text o just després de . ! ? \n
+    # Tolerància a signe d'obertura ¿, cometes i espais.
+    obertures = (
+        r"podries",
+        r"series? capa[çc] de",
+        r"t['’]importaria",
+    )
+    patro = (
+        r"(?:^|[.!?\n])\s*[¿\"“'‘]*\s*"      # frontera de frase + puntuació opcional
+        r"(?:" + "|".join(obertures) + r")\b"  # l'obertura de cortesia
+        r"[^.!?\n]*\?"                          # ... fins a un interrogant a la mateixa frase
+    )
+    return _re.search(patro, text, _re.IGNORECASE) is not None
+
+
 def compute_quality_signals(state: dict) -> dict:
     """Calcula mètriques agregades de qualitat de la sessió a partir del
     rastre detallat (state['history']) i metadades. Aquest bloc s'adjunta
@@ -316,6 +349,21 @@ def compute_quality_signals(state: dict) -> dict:
     # separador, o JSON malformat → fallback a action=stay).
     parse_failures = sum(1 for e in history
                          if e.get("control_parse_ok") is False)
+
+    # Reincidències de la regla d'estil "imperatiu directe" (idea 6).
+    # Comptem només els torns generats per la IA (reply_source == "ai"):
+    # el mode de reserva té text fix i no l'ha de jutjar aquesta regla.
+    # Si `reply_source` no hi és (rastres antics), assumim "ai" per no
+    # perdre senyal. El senyal NO afecta el flux; només informa el docent
+    # de si la regla del prompt aguanta.
+    ai_turns = [e for e in history
+                if e.get("reply_source", "ai") == "ai"]
+    cortesia_hits = sum(
+        1 for e in ai_turns
+        if detect_cortesia_interrogativa(e.get("tutor_reply", ""))
+    )
+    cortesia_rate = (round(cortesia_hits / len(ai_turns), 2)
+                     if ai_turns else None)
 
     # Tally de diagnòstics (Tasca 4). Comptem quants cops s'ha registrat
     # cada codi de malentesa, globalment i imputat al pas on estava
@@ -380,6 +428,8 @@ def compute_quality_signals(state: dict) -> dict:
         "turns_in_prereq": turns_in_prereq,
         "hint_requests": hint_requests,
         "parse_failures": parse_failures,
+        "cortesia_interrogativa_hits": cortesia_hits,
+        "cortesia_interrogativa_rate": cortesia_rate,
         "diagnostic_counts": diagnostic_counts,
         "diagnostic_per_step": diagnostic_per_step,
         "dominant_diagnostic_per_step": dominant_diagnostic_per_step,
@@ -415,6 +465,10 @@ def format_quality_signals(qs: dict) -> str:
         f"  Reforç usat: {prereq_info}",
         f"  Sol·licituds de pista: {qs['hint_requests']}    "
         f"Parse failures: {qs['parse_failures']}",
+        f"  Cortesia interrogativa (idea 6): "
+        f"{qs.get('cortesia_interrogativa_hits', 0)} torns IA"
+        + (f" ({qs['cortesia_interrogativa_rate']:.0%})"
+           if qs.get('cortesia_interrogativa_rate') is not None else ""),
         f"  Malentesos (codi: cops): {diag_line}",
     ]
     return "\n".join(lines)
@@ -688,6 +742,7 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
             "ts": time.time(),
             "student_msg": student_msg,
             "tutor_reply": result["reply"],
+            "reply_source": reply_source,
             "action": result["action"],
             "objectives_met": result["objectives_met"],
             "diagnostic": result.get("diagnostic"),

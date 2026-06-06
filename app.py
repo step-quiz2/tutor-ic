@@ -25,6 +25,7 @@ import re
 import time
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import problem as PB
 import llm as L
@@ -369,6 +370,28 @@ section[data-testid="stSidebar"] .stButton > button {
     margin: 0.15rem 0 0.7rem 0; line-height: 1.5;
     border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 0.6rem;
 }
+
+/* Botó "Continuar (N més)": ha de destacar molt més que un botó normal,
+   perquè és l'acció que fa avançar la lectura paginada. Mida de lletra
+   +15%, vora negra fina i fons violeta clar en repòs; en hover, fons més
+   fosc i vora més gruixuda. La classe st-key-more_continue_* la posa
+   Streamlit a partir del `key` del widget. box-sizing evita que el gruix
+   extra de la vora en hover desplaci el layout. */
+[class*="st-key-more_continue_"] button {
+    box-sizing: border-box;
+    font-size: 1.15em !important;
+    font-weight: 600 !important;
+    border: 1px solid #000 !important;
+    background: #ede7f6 !important;
+    color: #311b92 !important;
+    transition: background-color 0.12s ease, border-width 0.12s ease,
+                border-color 0.12s ease;
+}
+[class*="st-key-more_continue_"] button:hover {
+    background: #b39ddb !important;
+    color: #1a0d52 !important;
+    border: 3px solid #000 !important;
+}
 </style>
 """
 
@@ -622,9 +645,11 @@ def _split_opening(problem_id, content):
 # (el que veuen el model i el transcript) no canvia mai.
 
 # Pressupost de caràcters per pàgina. Per sota d'això, la bombolla es
-# mostra sencera i no apareix cap botó. Ajustat perquè una obertura llarga
-# quedi en ~2 pàgines i els enunciats/pistes curts en 1.
-PAGE_CHAR_BUDGET = 600
+# mostra sencera i no apareix cap botó. Baixat a 320 (abans 600) perquè
+# es pagini més sovint: cada subpantalla cap sencera al viewport, de
+# manera que en avançar de pas l'alumne veu l'inici del missatge nou (no
+# el final) i la pregunta queda visible sense haver de fer scroll-up.
+PAGE_CHAR_BUDGET = 320
 
 # Prefixos que marquen l'inici "natural" d'una secció nova: si un bloc en
 # comença per un, és un bon lloc per tallar pàgina encara que no s'hagi
@@ -689,32 +714,73 @@ def render_paginated_card(bubble_key, text, color, badge, source, label):
     shown = st.session_state.get(shown_key, 1)
     shown = max(1, min(shown, n))
 
+    # Idea 3 (UX scroll): en revelar una pàgina nova amb "Continuar", el rerun
+    # de Streamlit pot deixar el viewport on era, de manera que l'usuari ha de
+    # pujar a mà per veure l'inici del que acaba d'aparèixer. Per evitar-ho,
+    # ancorem el focus a l'INICI de l'última pàgina revelada i hi fem scroll
+    # un sol cop, just després del clic. La clau `scroll_target` la posa el
+    # handler del botó (més avall) i es consumeix aquí perquè l'scroll passi
+    # només al rerun immediatament posterior al clic, no a cada rerun.
+    safe_key = bubble_key.replace(":", "_").replace(" ", "_")
+    scroll_anchor = f"anchor_{safe_key}_{shown}"
+    want_scroll = st.session_state.pop("scroll_target", None) == bubble_key
+
     for idx in range(shown):
         # Etiqueta: la primera pàgina manté l'etiqueta original; les
         # continuacions porten un peu discret "(continua)".
         pg_label = label if idx == 0 else None
         suffix = "" if idx == 0 else f"(part {idx + 1} de {n})"
+        # Només l'última pàgina revelada porta l'àncora d'scroll.
+        anchor = scroll_anchor if idx == shown - 1 else None
         _render_one(pages[idx], color, badge if idx == 0 else None,
-                    source, pg_label, suffix=suffix)
+                    source, pg_label, suffix=suffix, anchor_id=anchor)
+
+    if want_scroll:
+        # Script en un iframe aïllat (components.html); per moure el document
+        # pare cal window.parent. scrollIntoView amb block:start deixa l'inici
+        # de la bombolla nova a dalt del viewport.
+        components.html(
+            f"""
+            <script>
+              const doc = window.parent.document;
+              const el = doc.getElementById("{scroll_anchor}");
+              if (el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+            </script>
+            """,
+            height=0,
+        )
 
     if shown < n:
         restant = n - shown
+        # Clau amb prefix `more_continue_` perquè Streamlit hi posi la classe
+        # `st-key-more_continue_...` al contenidor i el CSS la pugui
+        # estilitzar. Evitem `::` a la clau: trencaria el selector CSS.
         if st.button(f"Continuar ({restant} més) ↓",
-                     key=f"more::{bubble_key}",
+                     key=f"more_continue_{safe_key}",
                      use_container_width=True):
             st.session_state[shown_key] = shown + 1
+            # Marca aquesta bombolla com a objectiu d'scroll per al proper
+            # rerun; render_paginated_card ho consumeix i emet l'script.
+            st.session_state["scroll_target"] = bubble_key
             st.rerun()
 
 
-def _render_one(text, color, badge, source, label, suffix=""):
+def _render_one(text, color, badge, source, label, suffix="", anchor_id=None):
     """Renderitza una única targeta (una pàgina). `suffix` és un peu
-    discret opcional (p. ex. 'part 2 de 2')."""
+    discret opcional (p. ex. 'part 2 de 2'). `anchor_id`, si es passa,
+    insereix un ancoratge invisible just abans de la targeta perquè el
+    scroll automàtic (idea 3) hi pugui saltar."""
     badge_html = f'<span class="step-badge">{badge}</span>' if badge else ""
     body_html = simple_md_to_html(text)
     chip_html = _source_chip(source)
     label_html = (f'<p class="pregunta-label">{label}</p>' if label else "")
     suffix_html = (f'<p class="page-suffix">{suffix}</p>' if suffix else "")
+    anchor_html = (
+        f'<div id="{anchor_id}" style="scroll-margin-top:1rem;"></div>'
+        if anchor_id else ""
+    )
     html = (
+        f"{anchor_html}"
         f'<div class="tutor-card tutor-{color}">'
         f'<div class="tutor-header">'
         f'<span>🎓 Tutor</span>'
