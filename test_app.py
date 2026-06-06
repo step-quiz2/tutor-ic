@@ -48,6 +48,7 @@ os.environ.setdefault("GEMINI_API_KEY", "fake-for-tests")
 
 import app  # noqa: E402
 import problem as PB  # noqa: E402
+import simulator as S  # noqa: E402
 
 
 PASSED = 0
@@ -437,6 +438,46 @@ import copy
 before = copy.deepcopy(st_probe)
 _ = app.inspector_snapshot(st_probe)
 check("inspector_snapshot no muta l'estat", st_probe == before)
+
+
+# =============================================================================
+# build_session_record — el registre descarregable en mode docent
+# =============================================================================
+print("\nTest — build_session_record: estructura i robustesa")
+import json as _json
+
+st_rec = S.new_session("IC-001")
+st_rec["history"].append({
+    "turn": 1, "ts": 0.0, "student_msg": "una resposta",
+    "tutor_reply": "Molt bé.", "reply_source": "ai", "action": "advance",
+    "objectives_met": ["param_vs_stat"], "diagnostic": None,
+    "control_parse_ok": True,
+    "position_before": {"step": 1, "prereq": None},
+    "position_after": {"step": 2, "prereq": None},
+    "elapsed_seconds": 1.2,
+    "raw_output": "Molt bé.\n---CONTROL---\n{\"action\": \"advance\"}",
+})
+rec = app.build_session_record(st_rec)
+check("té les tres seccions",
+      set(rec.keys()) == {"meta", "conversa", "contracte_per_torn"})
+check("meta porta el problem_id", rec["meta"]["problem_id"] == "IC-001")
+check("conversa reflecteix el display",
+      len(rec["conversa"]) == len(st_rec["display"]))
+check("contracte porta el torn", len(rec["contracte_per_torn"]) == 1)
+check("el contracte conserva el raw_output",
+      "---CONTROL---" in rec["contracte_per_torn"][0]["raw_output"])
+try:
+    blob = _json.dumps(rec, ensure_ascii=False)
+    _json.loads(blob)
+    check("serialitza i parseja com a JSON", True)
+except (TypeError, ValueError) as e:
+    check("serialitza i parseja com a JSON", False, str(e))
+try:
+    rec_buit = app.build_session_record({"history": []})
+    check("no peta amb estat parcial",
+          rec_buit["meta"]["current_step"] is None)
+except Exception as e:
+    check("no peta amb estat parcial", False, str(e))
 
 
 # =============================================================================

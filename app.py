@@ -21,6 +21,7 @@ s'afegeix al transcript després de cada crida (bug del simulator
 original).
 """
 
+import json
 import re
 import time
 
@@ -828,6 +829,51 @@ def render_thinking_card():
     st.markdown(html, unsafe_allow_html=True)
 
 
+def build_session_record(state) -> dict:
+    """Munta el registre complet d'una sessió per a descàrrega (mode docent).
+
+    Recull el "contracte" sencer entre Python i la IA, en tres parts:
+
+      - `meta`: quin problema, on és la sessió, quants torns porta.
+      - `conversa`: la seqüència visible de bombolles (display), amb el seu
+        `source` (student / py / ai) i, si en té, l'acció que la va pintar.
+        És el que ha vist l'alumne, en ordre.
+      - `contracte_per_torn`: el rastre de control torn a torn (state
+        history): què va emetre la IA (`action`, `diagnostic`, `raw_output`),
+        com va quedar la posició (que decideix Python), si el control block es
+        va poder parsejar, i quantes crides/temps per torn.
+
+    Tot són dades que ja viuen a l'estat; aquí només es reorganitzen en una
+    forma estable i autoexplicativa per a qui revisi el JSON fora de l'app.
+    """
+    pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+    try:
+        title = PB.PROBLEMS[pid]["problem"].get("tema")
+    except (KeyError, TypeError):
+        title = None
+    return {
+        "meta": {
+            "problem_id": pid,
+            "tema": title,
+            "current_step": state.get("current_step"),
+            "active_prereq": state.get("active_prereq"),
+            "finished": state.get("finished", False),
+            "turn_count": state.get("turn_count", 0),
+            "model": getattr(L, "MODEL", None),
+        },
+        "conversa": [
+            {
+                "role": m.get("role"),
+                "source": m.get("source"),
+                "action": m.get("action"),
+                "content": m.get("content"),
+            }
+            for m in state.get("display", [])
+        ],
+        "contracte_per_torn": state.get("history", []),
+    }
+
+
 def render_inspector(state):
     """Panell de senyals "Com pensa el tutor" (Tasca 1).
 
@@ -846,11 +892,21 @@ def render_inspector(state):
     temps real podria condicionar com respon l'alumne.
     """
     st.markdown(
-        '<div class="signals-title">🔬 Senyals en directe '
-        '<span class="signals-sub">(mode docent)</span></div>'
-        '<div class="signals-thesis">🤖 la IA emet l\'acció · '
-        "🐍 Python decideix la posició</div>",
+        '<div class="signals-title">🔬 Reaccions en directe</div>',
         unsafe_allow_html=True,
+    )
+
+    # Descàrrega del registre complet de la sessió (mode docent). Es munta
+    # i s'ofereix sempre, encara que no hi hagi cap torn: en aquest cas es
+    # baixa l'estat inicial (conversa amb l'obertura, contracte buit).
+    record = build_session_record(state)
+    pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+    st.download_button(
+        "⬇️ Baixa el registre (JSON)",
+        data=json.dumps(record, ensure_ascii=False, indent=2),
+        file_name=f"sessio_{pid}.json",
+        mime="application/json",
+        use_container_width=True,
     )
 
     snap = inspector_snapshot(state)
@@ -895,7 +951,7 @@ def render_inspector(state):
     else:
         st.markdown(
             '<div class="inspector-line inspector-muted">'
-            "Sense malentesa registrada (l'alumne va per bon camí).</div>",
+            "No hi ha cap malentès.</div>",
             unsafe_allow_html=True,
         )
 
@@ -1085,6 +1141,7 @@ def render_chat_view(state):
         "ts": time.time(),
         "student_msg": student_msg,
         "tutor_reply": result["reply"],
+        "reply_source": reply_source,
         "action": result["action"],
         "objectives_met": result["objectives_met"],
         "diagnostic": result.get("diagnostic"),
@@ -1092,6 +1149,10 @@ def render_chat_view(state):
         "position_before": position_before,
         "position_after": position_after,
         "elapsed_seconds": elapsed,
+        # Per al registre JSON docent (descarregable): el raw_output cru del
+        # model, que inclou el bloc ---CONTROL--- abans de parsejar. Junt amb
+        # tutor_reply/action deixa veure el contracte sencer Python↔IA.
+        "raw_output": result.get("raw_output"),
     })
 
     st.rerun()

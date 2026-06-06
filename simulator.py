@@ -750,6 +750,7 @@ def run_session(debug_mode=False, save_path=None, use_color=True,
             "position_before": position_before,
             "position_after": position_after,
             "elapsed_seconds": elapsed,
+            "raw_output": result.get("raw_output"),
         })
 
         # Mostrem la resposta del tutor (amb etiqueta d'origen) i, si Python
