@@ -286,8 +286,7 @@ section[data-testid="stSidebar"] .stButton > button {
    fina del color; en hover, fons més fort i vora negra més gruixuda.
    box-sizing: border-box evita que el gruix extra de la vora desplaci res.
    ------------------------------------------------------------------------- */
-.st-key-pick_IC-001 button,
-.st-key-pick_CAUS-001 button {
+.st-key-pick_IC-001 button {
     box-sizing: border-box;
     transition: background-color 0.12s ease, border-color 0.12s ease,
                 border-width 0.12s ease, color 0.12s ease;
@@ -301,17 +300,6 @@ section[data-testid="stSidebar"] .stButton > button {
 .st-key-pick_IC-001 button:hover {
     background: #64b5f6 !important;
     color: #0d2c54 !important;
-    border: 3px solid #000 !important;
-}
-/* CAUS-001 → verd fluix */
-.st-key-pick_CAUS-001 button {
-    background: #e8f5e9 !important;
-    color: #1b5e20 !important;
-    border: 1.5px solid #a5d6a7 !important;
-}
-.st-key-pick_CAUS-001 button:hover {
-    background: #81c784 !important;
-    color: #0d3d12 !important;
     border: 3px solid #000 !important;
 }
 
@@ -639,7 +627,7 @@ def _split_opening(problem_id, content):
 # -----------------------------------------------------------------------------
 # Paginació de bombolles llargues (UI pura, no toca dades ni transcript)
 # -----------------------------------------------------------------------------
-# Algunes bombolles deterministes (sobretot l'obertura de CAUS-001) són
+# Algunes bombolles deterministes (sobretot l'obertura del problema) són
 # massa llargues per a una sola viewport. Les partim en "subpantalles" i en
 # revelem una cada cop que l'usuari prem "Continuar", sense esborrar les
 # anteriors. És purament de presentació: el `content` real de la bombolla
@@ -1217,7 +1205,9 @@ def render_summary_view(state):
 
     if qs["used_prereq"]:
         s = "s" if qs["turns_in_prereq"] != 1 else ""
-        st.markdown(f"**Reforç PRE-CONFOUNDER** — {qs['turns_in_prereq']} torn{s}")
+        pid = state.get("problem_id", PB.DEFAULT_PROBLEM_ID)
+        prereq_id = PB.PROBLEMS[pid]["prereq_id"]
+        st.markdown(f"**Reforç {prereq_id}** — {qs['turns_in_prereq']} torn{s}")
         st.progress(qs["turns_in_prereq"] / max_count)
 
     # Malentesos detectats per pas (Tasca 4). Traduïm els codis del catàleg

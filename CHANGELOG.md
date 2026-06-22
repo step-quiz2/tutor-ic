@@ -4,6 +4,43 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-06-22 — Supressió del problema CAUS-001 (correlació vs. causalitat)
+
+S'elimina completament el problema CAUS-001 del sistema. El tutor torna
+a oferir un sol problema, IC-001 (interpretació d'un interval de
+confiança). L'arquitectura (Streamlit + capa LLM via API-key + registry
+de problemes a `problem.py`) no canvia: el picker, la màquina d'estats i
+el flux de prompt deriven dinàmicament del registry, així que treure una
+entrada n'hi ha prou per fer desaparèixer el problema de tot el flux.
+
+Canvis:
+
+- **`problem.py`**: eliminat el bloc de dades sencer de CAUS-001
+  (`_CAUS001_ERROR_CATALOG`, `_CAUS001_DEPENDENCIES`,
+  `_CAUS001_PREREQUISITES`, `_CAUS001_PROBLEM`) i la seva entrada al
+  registry `PROBLEMS`. `DEFAULT_PROBLEM_ID` torna a `"IC-001"`.
+  Docstrings actualitzats. Les assercions d'invariants del mòdul
+  continuen validant l'esquema en càrrega.
+- **`prompts/tutor_system_v1.2_CAUS-001.md`**: fitxer eliminat.
+- **`app.py`**: tret el bloc CSS del botó `pick_CAUS-001` i la
+  referència del comentari de paginació.
+- **`simulator.py`** i **`llm.py`**: nets els exemples d'ús, docstrings
+  i el text de pista de reserva (ara genèric, no causal).
+- **Tests**: `test_diagnostic.py` (construït íntegrament sobre CAUS-001)
+  eliminat. A la resta de suites s'han reduït els bucles multi-problema
+  a IC-001, normalitzat els tokens de reforç a `PRE-PARAM` i reescrit
+  els stubs amb temàtica IC-001. Suite en verd: 232 tests a les tres
+  suites principals (`test_tutor_turn` 74, `test_simulator_state` 79,
+  `test_app` 79), més `test_enrichment`, `test_enunciat_length` i
+  `test_cortesia`.
+- **`README.md`**: actualitzat a un sol problema (intro, característiques,
+  CLI, secció de selecció, taula de fitxers, arquitectura, recomptes de
+  tests).
+
+Nota: les entrades anteriors d'aquest changelog que descriuen feina
+sobre CAUS-001 es conserven com a registre històric del que va passar;
+no es reescriuen.
+
 ## 2026-05-29 — Paginació de bombolles llargues ("Continuar")
 
 Millora d'UI/UX: les bombolles del tutor massa llargues per a una sola

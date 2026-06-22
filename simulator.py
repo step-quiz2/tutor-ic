@@ -8,7 +8,7 @@ amb feedback ràpid abans d'invertir en interfície gràfica.
 Ús bàsic:
     GEMINI_API_KEY=... python3 simulator.py
     GEMINI_API_KEY=... python3 simulator.py --problem IC-001
-    GEMINI_API_KEY=... python3 simulator.py --problem CAUS-001 --debug
+    GEMINI_API_KEY=... python3 simulator.py --problem IC-001 --debug
     GEMINI_API_KEY=... python3 simulator.py --save sessio.json
 
 Si no s'especifica `--problem`, el simulador presenta un picker
@@ -55,7 +55,7 @@ def _prereq_id_for(state):
     """Retorna l'id del prerequisit del problema actiu a `state`.
 
     Multi-problema: cada problema té el seu prereq (PRE-PARAM per a
-    IC-001, PRE-CONFOUNDER per a CAUS-001). El state guarda el
+    IC-001). El state guarda el
     `problem_id` de la sessió i d'aquí en deriva el prereq. Si el
     state no porta problem_id (estats heretats o construïts a mà
     pels tests), tornem al problema per defecte de PB.
@@ -582,7 +582,7 @@ def pick_problem_interactive(disp=None):
 
     Mostra la llista de PB.PROBLEMS i accepta:
       - un índex numèric (1, 2, ...)
-      - un id literal (IC-001, CAUS-001)
+      - un id literal (IC-001)
 
     Retorna el problem_id triat. Si l'usuari prem Enter sense escriure
     res, retorna PB.DEFAULT_PROBLEM_ID.
@@ -816,10 +816,10 @@ def main():
             "Exemples:\n"
             "  GEMINI_API_KEY=... python3 simulator.py\n"
             "  GEMINI_API_KEY=... python3 simulator.py --problem IC-001\n"
-            "  GEMINI_API_KEY=... python3 simulator.py --problem CAUS-001 --debug\n"
+            "  GEMINI_API_KEY=... python3 simulator.py --problem IC-001 --debug\n"
             "  GEMINI_API_KEY=... python3 simulator.py --save sessio.json\n"
             "\n"
-            "Problemes disponibles: IC-001, CAUS-001 "
+            "Problemes disponibles: IC-001 "
             f"(default: {PB.DEFAULT_PROBLEM_ID})\n"
             "Sense --problem, el simulador mostra un picker interactiu.\n"
         ),

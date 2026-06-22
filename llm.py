@@ -211,7 +211,7 @@ def _format_position_marker(current_position: dict,
                        al Pas N en acabar)]                  — en reforç
 
     El `<PREREQ_ID>` es prengut directament de `current_position["prereq"]`
-    (per exemple "PRE-PARAM" per a IC-001 o "PRE-CONFOUNDER" per a CAUS-001).
+    (per exemple "PRE-PARAM" per a IC-001).
 
     Args:
         current_position: {"step": int|None, "prereq": str|None}.
@@ -442,8 +442,8 @@ def _fallback_turn(problem: dict, current_position: dict,
     pista = PB.hint_for_diagnostic(pid, step, likely) if step else None
     if not pista:
         pista = pistes[0] if pistes else (
-            "Vigila de no confondre que una associació sigui real amb que "
-            "sigui causal.")
+            "Repassa el concepte clau del pas i justifica la teva "
+            "resposta amb les teves paraules.")
     return _fb_result(f"Encara no del tot. Pista: {pista}", "stay",
                       diagnostic=likely)
 

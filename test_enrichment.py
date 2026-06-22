@@ -70,7 +70,7 @@ def _last_py_bubble(state):
 # -----------------------------------------------------------------------------
 print("\n--- Accessors de problem.py ---")
 
-for pid in ("IC-001", "CAUS-001"):
+for pid in ("IC-001",):
     for n in (1, 2, 3):
         q = PB.canonical_question(pid, n)
         h = PB.step_hints(pid, n)
@@ -166,20 +166,20 @@ check("no s'afegeix bombolla py duplicada", n_py_after == n_py_before)
 # -----------------------------------------------------------------------------
 print("\n--- enrich en retrocés injecta la pregunta del prerequisit ---")
 
-st = S.new_session("CAUS-001")
+st = S.new_session("IC-001")
 st["transcript"].append({"role": "student", "content": "no ho entenc"})
 st["transcript"].append({"role": "tutor", "content": "Tornem un pas enrere."})
 S.append_display(st, "tutor", "Tornem un pas enrere.", "ai")
 transition = S.apply_action(st, "retreat_to_prereq")
 canonical = S.enrich_after_transition(st, transition)
 check("retreat injecta la pregunta del prerequisit",
-      canonical == PB.prereq_question("CAUS-001"), repr(canonical))
+      canonical == PB.prereq_question("IC-001"), repr(canonical))
 
 # En sortir del reforç, torna a injectar la pregunta del pas que el va activar.
 transition = S.apply_action(st, "advance")  # exit_prereq → torna a pas 1
 canonical = S.enrich_after_transition(st, transition)
 check("exit_prereq injecta la pregunta canònica del pas de retorn",
-      canonical == PB.canonical_question("CAUS-001", st["current_step"]))
+      canonical == PB.canonical_question("IC-001", st["current_step"]))
 
 
 # -----------------------------------------------------------------------------

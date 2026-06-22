@@ -11,8 +11,8 @@ allargar un enunciat, el test falla abans de la demo.
 Què es comprova i què no:
   - `canonical_question` és la pregunta destil·lada que VEU l'alumne quan
     Python obre un pas. HA de ser curta. → Sí que es limita.
-  - `text` pot contenir context llarg (dades, fonts) en problemes com
-    CAUS-001; l'app el PAGINA en subpantalles, així que la seva llargada
+  - `text` pot contenir context llarg (dades, fonts); l'app el PAGINA en
+    subpantalles, així que la seva llargada
     no és un problema d'UX directe. → NO es limita aquí (només es comprova
     que existeix i no és buit).
 
