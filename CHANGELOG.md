@@ -4,6 +4,69 @@ Registre concís dels canvis significatius del sistema, en ordre
 cronològic invers. El detall tècnic de cada fase viu als documents
 referenciats.
 
+## 2026-06-23 — Reorientació d'IC-001 i nou problema IC-002 (proporció)
+
+Canvi pedagògic de fons en els dos sentits: es reorienta el problema
+existent i se n'afegeix un de nou, mantenint intacta l'arquitectura
+(Streamlit + capa LLM + registry de problemes + màquina d'estats amb
+reforç).
+
+**Reorientació d'IC-001.** Abans treballava un sol aspecte —la
+interpretació freqüentista del "95%" i la distinció μ-fix vs
+x̄-aleatori— i el treballava als tres passos alhora. Ara treballa tres
+eixos diferents del **disseny i la construcció** de l'interval per a una
+mitjana: (1) com es construeix l'interval i el paper de l'error
+estàndard s/√n; (2) el biaix de selecció de la mostra i per què
+augmentar n no el corregeix; (3) la tria del nivell de confiança i el
+trade-off fiabilitat ↔ utilitat. El context canvia d'"hores d'estudi"
+(amb sostre físic de 24 h que contaminava el cas extrem del 99,9%) a
+"hores de son dels adolescents les nits de diari". S'adopta la
+distribució *t* (σ desconeguda, estimada amb s).
+
+**Nou problema IC-002 (proporció).** Problema germà que estima el
+**percentatge** d'adolescents que dormen menys de 7 h. Ensenya una
+arquitectura conceptual diferent: variable Bernoulli (sí/no), variància
+lligada a p (val p(1-p), màxima a 0,5), error estàndard √(p(1-p)/n) que
+no necessita una *s* externa, i retorn a la *z* (no la *t*). El sostre
+natural [0, 1] fa que el cas extrem sigui omplir tot el rang possible
+(p. ex. [1%, 99%] amb mostra ridícula o confiança del 99,99%), un absurd
+més net que el de la mitjana perquè cap valor és impossible, només
+inútil.
+
+Canvis:
+
+- **`problem.py`**: catàleg d'errors, dependències, prerequisit, enunciat
+  i els tres passos d'IC-001 reescrits del tot. El reforç es reconverteix
+  de PRE-PARAM (μ vs x̄) a **PRE-SE** (error estàndard) en lloc
+  d'eliminar-lo, perquè la maquinària `retreat_to_prereq` està entrellaçada
+  amb la màquina d'estats; reconvertir-lo manté tot el motor i els tests de
+  mecànica intactes i aporta un graó de rescat coherent amb el tema nou.
+  Afegits els blocs sencers d'IC-002 (`_IC002_*`) i la seva entrada al
+  registry `PROBLEMS`, amb prereq **PRE-VARP** (variància p(1-p)). Nous
+  camps `pistes_per_error` que mapegen codis de diagnòstic a pistes.
+- **`prompts/tutor_system_v1.2_IC-001.md`**: reescrites les sis
+  situacions-exemple (l'arquer, el μ-fix, el [3,2;4,8] fora), el bloc del
+  reforç i les seccions de comprensió/avenç. El cos socràtic genèric
+  (anti-parroting, anti-tancament, anti-frustració, format de control) es
+  manté.
+- **`prompts/tutor_system_v1.2_IC-002.md`**: fitxer nou, partint de la
+  base d'IC-001 i adaptant les situacions-exemple i el reforç al tema de
+  proporcions.
+- **`llm.py`**: actualitzat el text de la pista de reserva del reforç i
+  els codis d'error d'exemple als docstrings. La lògica de càrrega de
+  prompt per-problema ja era genèrica i suporta IC-002 sense canvis.
+- **`app.py`**: actualitzats els codis de malentesa d'exemple als
+  comentaris.
+- **Tests**: actualitzats els que codificaven el nom del prereq antic
+  (PRE-PARAM → PRE-SE), les keywords del concepte vell, els codis d'error
+  (INT_prob_param → CONSTR_s_vs_se) i el recompte de problemes del registry
+  (un → dos). Suite en verd: **275 tests** (`test_tutor_turn` 74,
+  `test_simulator_state` 83, `test_app` 79, `test_enrichment` 30,
+  `test_cortesia` 6, `test_enunciat_length` 3).
+- **`README.md`**: actualitzat a dos problemes (intro, característiques,
+  CLI, selecció, demos per als dos problemes, taula de fitxers,
+  arquitectura, recomptes de tests).
+
 ## 2026-06-22 — Supressió del problema CAUS-001 (correlació vs. causalitat)
 
 S'elimina completament el problema CAUS-001 del sistema. El tutor torna

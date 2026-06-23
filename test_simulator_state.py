@@ -411,16 +411,17 @@ check("sense ts → suma d'elapsed_seconds",
 
 
 # =============================================================================
-# Tests del registry de problemes (un sol problema: IC-001)
+# Tests del registry de problemes (dos problemes: IC-001, IC-002)
 # =============================================================================
 
-print("\nTest MP1 — el registry té el problema esperat")
+print("\nTest MP1 — el registry té els problemes esperats")
 check("IC-001 al registry", "IC-001" in PB.PROBLEMS)
-check("PB.list_ids() retorna una sola entrada",
-      len(PB.list_ids()) == 1)
+check("IC-002 al registry", "IC-002" in PB.PROBLEMS)
+check("PB.list_ids() retorna dues entrades",
+      len(PB.list_ids()) == 2)
 
 print("\nTest MP2 — PB.get() retorna bundles ben formats")
-for _pid in ("IC-001",):
+for _pid in ("IC-001", "IC-002"):
     bundle = PB.get(_pid)
     check(f"{_pid}: id correcte", bundle["id"] == _pid)
     check(f"{_pid}: té 3 passos",

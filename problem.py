@@ -269,18 +269,285 @@ Com que la desviació poblacional σ NO es coneix (s'ha estimat amb la pròpia m
 
 
 # =============================================================================
+# IC-002 — Interval de confiança per a una PROPORCIÓ
+# =============================================================================
+# Tema germà d'IC-001 però amb una arquitectura conceptual diferent: aquí no
+# estimem la mitjana d'una variable contínua, sinó la PROPORCIÓ p d'una
+# població que compleix una condició binària (dormir < 7 h). Idees pròpies:
+#   - variable Bernoulli (sí/no), no una mesura contínua;
+#   - la variància NO és lliure: està lligada a p, val p(1-p) (màxima a 0,5);
+#   - per això NO cal una "s" externa, i tornem a la z (no a la t);
+#   - el sostre natural [0, 1] fa que l'absurd sigui OMPLIR tot l'espai
+#     possible ([1%, 99%] = no dir res), no sortir-se'n.
+
+_IC002_ERROR_CATALOG = {
+    "PROP_se_lliure": (
+        "No veu que la variància d'una proporció està LLIGADA a p "
+        "(val p(1-p)) i busca una desviació estàndard externa, com si "
+        "calgués mesurar-la a part igual que amb una variable contínua. "
+        "No reconeix que el percentatge ja conté la seva pròpia dispersió."
+    ),
+    "PROP_var_max_50": (
+        "No percep que la incertesa (la variància p(1-p)) és MÀXIMA quan "
+        "p ronda el 50% i mínima als extrems: creu que la precisió no "
+        "depèn de quin sigui el percentatge estimat."
+    ),
+    "BIAS_n_no_corregeix": (
+        "Creu que augmentar la mida de la mostra corregeix el biaix de "
+        "selecció. No veu que n redueix l'AMPLADA (via √(p(1-p)/n)) però "
+        "mai el BIAIX (el desplaçament del centre): una mostra esbiaixada "
+        "gran és igual de descentrada, només amb més falsa seguretat."
+    ),
+    "CONF_mes_sempre_millor": (
+        "Creu que més confiança és sempre millor (99,99% > 95%), sense "
+        "veure el cost: pujar la confiança eixampla l'interval fins a "
+        "omplir tot el rang [0%, 100%] i el fa vàcuament cert i inútil."
+    ),
+    "KEY_only": (
+        "Resposta-keyword: conté un terme correcte (proporció, p(1-p), "
+        "error estàndard, arrel de n, biaix, confiança...) però no el "
+        "justifica ni l'aplica a la pregunta concreta. Cal desenvolupar "
+        "el raonament: explicar QUÈ vol dir el terme en aquest context "
+        "i PER QUÈ respon la pregunta."
+    ),
+    "GEN_other": "Error no catalogat.",
+}
+
+_IC002_DEPENDENCIES = {
+    "var_proporcio": {
+        "description": (
+            "La variància d'una proporció està lligada a la pròpia p: "
+            "val p(1-p), i és màxima a p=0,5. L'error estàndard de la "
+            "proporció mostral és √(p(1-p)/n), de manera que no cal una "
+            "desviació estàndard mesurada a part: el percentatge conté "
+            "la seva pròpia dispersió. Per això s'usa la z (no la t)."
+        ),
+        "keywords": ["p(1-p)", "p (1-p)", "bernoulli", "binària", "binaria",
+                     "sí/no", "si/no", "proporció", "proporcio",
+                     "arrel", "√", "dividir per", "lligada", "màxima",
+                     "maxima", "50%", "0,5", "0.5"],
+        "prerequisite": "PRE-VARP",
+    },
+}
+
+_IC002_PREREQUISITES = {
+    "PRE-VARP": {
+        "id": "PRE-VARP",
+        "concept": "var_proporcio",
+        "question": (
+            "Abans de seguir, aclarim una peça clau d'aquest problema. "
+            "Quan estimem un percentatge (una proporció p), la "
+            "incertesa no és la mateixa per a tots els valors de p: és "
+            "MÀXIMA quan p ronda el 50% i mínima quan p s'acosta al 0% o "
+            "al 100%. Per què? Pensa en l'expressió p(1-p): on és més "
+            "gran, i què vol dir això sobre com de segurs estem segons "
+            "el percentatge estimat?"
+        ),
+        "keywords_required": ["p(1-p)", "p (1-p)", "màxima", "maxima",
+                              "50", "0,5", "0.5", "meitat", "extrems",
+                              "variància", "variancia", "dispersió",
+                              "dispersio"],
+        "forbidden_keywords": [],
+        "explanation": (
+            """**La variància d'una proporció no és lliure: està lligada a la pròpia p.**
+
+Per a una variable sí/no (Bernoulli), la variància de cada observació val exactament **p(1-p)**. Aquesta expressió:
+
+- val **0** als extrems (p=0 o p=1): si tothom respon igual, no hi ha cap dispersió;
+- és **màxima a p=0,5** (val 0,25): quan la població està partida per la meitat, és quan hi ha més incertesa.
+
+Conseqüència 1: l'error estàndard de la proporció és **√(p(1-p)/n)** — i no cal mesurar cap desviació estàndard a part, perquè el percentatge ja conté la seva pròpia dispersió.
+
+Conseqüència 2: com que no estimem cap σ amb una mostra a part, **tornem a la z** (1,96 per al 95%), no a la t de Student."""
+        ),
+    },
+}
+
+_IC002_PROBLEM = {
+    "id": "IC-002",
+    "tema": "Interval de confiança per a una proporció: variància lligada a p, biaix i nivell de confiança",
+    "enunciat": (
+        """El mateix equip de salut pública vol estimar ara quin PERCENTATGE dels adolescents de 14 a 16 anys escolaritzats a la ciutat dorm estrictament menys de 7 hores les nits de diari (de diumenge a dijous). En lloc de mesurar quantes hores dorm cadascú, només es registra una resposta sí/no: «dorms menys de 7 hores?».
+
+D'una mostra aleatòria de n = 100 adolescents, 45 responen que sí. La proporció mostral és, doncs:
+  - p̂ = 45/100 = 0,45 (un 45%)
+
+Aquí la variància no s'estima a part: per a una variable sí/no, la dispersió ja ve donada per p(1-p). L'error estàndard és √(p̂(1−p̂)/n), i com que no estimem cap σ externa, s'usa la distribució normal (z = 1,96 per al 95%). S'obté un interval de confiança del 95% per a la proporció poblacional p:
+
+  [0,352 ; 0,548] = [35,2% ; 54,8%]"""
+    ),
+    "dependencies": ["var_proporcio"],
+    "passos": [
+        {
+            "id": 1,
+            "text": (
+                """L'interval és [35,2% ; 54,8%], centrat en p̂ = 45% amb un marge de ±9,8 punts. Però fixa't en una cosa curiosa: aquí no hem mesurat cap desviació estàndard de les dades, com fèiem amb les hores. D'on surt, doncs, la dispersió que entra al marge? I per què, si el percentatge hagués sortit del 90% en lloc del 45%, el marge seria més petit?"""
+            ),
+            "expected_summary": (
+                "Per a una variable sí/no, la variància no és lliure: està "
+                "LLIGADA a p i val p(1-p). Per això no cal mesurar cap "
+                "desviació estàndard a part — el percentatge ja conté la "
+                "seva pròpia dispersió. L'error estàndard és √(p̂(1−p̂)/n). "
+                "I com que p(1-p) és MÀXIMA a 0,5 i petita als extrems, un "
+                "p̂ del 90% (proper a l'extrem) dona menys variància i per "
+                "tant marge més petit que un p̂ del 45% (proper a la meitat)."
+            ),
+            "typical_error": (
+                "Buscar una desviació estàndard externa com si calgués "
+                "mesurar-la a part (com amb les hores), sense veure que la "
+                "variància d'una proporció ja surt de p(1-p); o creure que "
+                "la precisió no depèn de quin sigui el percentatge."
+            ),
+            "typical_error_label": "PROP_se_lliure",
+            "key_concepts": ["var_proporcio"],
+            "canonical_question": (
+                """Si aquí no mesurem cap desviació estàndard de les dades, d'on surt la dispersió que entra al marge ±9,8 punts? I per què amb un p̂ del 90% el marge seria més petit que amb el 45%?"""
+            ),
+            "pistes": [
+                """Per a una variable sí/no no hi ha una 's' que mesurar a part: la dispersió surt sola de la pròpia proporció. Quina expressió, feta només amb p, fa de variància? Mira on és més gran: a p=0,5 o als extrems?""",
+                "L'error estàndard d'una proporció és √(p(1-p)/n). El factor "
+                "p(1-p) val 0,25 a p=0,5 (màxim) i baixa cap a 0 als "
+                "extrems. Per això un p̂ del 90% té menys variància (0,09) "
+                "que un del 45% (≈0,25): marge més petit.",
+            ],
+            "pistes_per_error": {
+                "PROP_se_lliure": (
+                    "No busquis una desviació mesurada a part: amb una "
+                    "variable sí/no, la variància ja ve determinada per la "
+                    "proporció. Quant val la variància d'una Bernoulli en "
+                    "funció de p? És l'expressió p(1-p)."
+                ),
+                "PROP_var_max_50": (
+                    "La precisió SÍ depèn del percentatge. Calcula p(1-p) "
+                    "per a p=0,5 i per a p=0,9: 0,25 contra 0,09. Com més "
+                    "a prop del 50%, més incertesa; com més a l'extrem, "
+                    "menys."
+                ),
+            },
+        },
+        {
+            "id": 2,
+            "text": (
+                """Tot el càlcul assumeix que els 100 adolescents són una mostra aleatòria de tota la ciutat. Imagina que, en realitat, l'enquesta es va passar a les 8 del matí a l'entrada de l'institut: just els qui es van quedar despierts fins tardíssim potser no han vingut o han arribat tard, i no entren a la mostra. El percentatge estimat (45%) seria de fiar? I si, en lloc de 100, n'haguéssim enquestat 5.000 a la mateixa porta i a la mateixa hora, quedaria arreglat?"""
+            ),
+            "expected_summary": (
+                "La fórmula assumeix que la mostra representa la població. "
+                "Si el mètode de mostreig deixa fora un subgrup sencer "
+                "(precisament els qui dormen poc, que són els que ens "
+                "interessa comptar!), p̂ deixa d'estimar p sense biaix: el "
+                "percentatge surt esbiaixat cap avall (n'hem perdut justament "
+                "dels qui dormen <7h). L'interval pot ser PRECÍS però "
+                "DESCENTRAT. Augmentar n a 5.000 estreny l'interval (via "
+                "√(p(1-p)/n)) però NO toca el centre: una mostra esbiaixada "
+                "gran és igual de descentrada, només amb més falsa seguretat. "
+                "n ataca la variància, mai el biaix."
+            ),
+            "typical_error": (
+                "Creure que augmentar la mostra (5.000 en lloc de 100) "
+                "arregla el biaix de selecció, confonent una mostra GRAN "
+                "amb una mostra ALEATÒRIA/representativa."
+            ),
+            "typical_error_label": "BIAS_n_no_corregeix",
+            "key_concepts": ["var_proporcio"],
+            "canonical_question": (
+                """Si l'enquesta es passa només a l'entrada de l'institut a les 8 del matí (i els qui van dormir poc no hi són), el 45% és de fiar? Augmentar la mostra a 5.000 al mateix lloc i hora ho arreglaria?"""
+            ),
+            "pistes": [
+                "Pregunta't qui queda FORA de la mostra amb aquest mètode. "
+                "Justament els qui dormen poc (els que no arriben a l'hora) "
+                "són els que compten per al «sí». Si en falten "
+                "sistemàticament, el percentatge observat va cap amunt o cap "
+                "avall?",
+                "Distingeix dues coses que la n NO afecta igual: l'AMPLADA "
+                "de l'interval (√(p(1-p)/n), que sí baixa amb més mostra) i "
+                "el CENTRE (que el biaix desplaça). Amb 5.000 al mateix lloc, "
+                "l'interval s'estreny... però segueix centrat al percentatge "
+                "equivocat. El biaix es queda.",
+            ],
+            "pistes_per_error": {
+                "BIAS_n_no_corregeix": (
+                    "Pensa-ho amb els extrems: amb 5.000 enquestats a la "
+                    "mateixa porta el matí, l'interval es fa estretíssim. "
+                    "Però si els qui dormen poc segueixen sense aparèixer-hi, "
+                    "el percentatge no s'ha mogut del valor esbiaixat: tens "
+                    "un interval molt precís al voltant del número equivocat. "
+                    "La n redueix la variància, no el biaix."
+                ),
+            },
+        },
+        {
+            "id": 3,
+            "text": (
+                """Hem treballat amb un 95% de confiança i ha sortit [35,2% ; 54,8%]. Si l'equip hagués volgut estar moltíssim més segur —diguem un 99,99%— què li passaria a l'amplada de l'interval? I si, a més, la mostra hagués estat ridícula (per exemple 4 persones), fins on podria arribar l'interval? Per què, llavors, no demanem sempre el màxim de confiança?"""
+            ),
+            "expected_summary": (
+                "El nivell de confiança és una ELECCIÓ. Marge = z·√(p(1-p)/n); "
+                "pujar la confiança puja z (1,96 → 3,89 per al 99,99%) i "
+                "eixampla el marge. Amb mostra ridícula (n=4) i/o confiança "
+                "absurda, l'interval pot omplir gairebé tot el rang possible "
+                "[0%, 100%], p. ex. [1% ; 99%]: és vàcuament cert (cap valor "
+                "és impossible) però NO DIU RES. Aquí el sostre natural [0,1] "
+                "fa l'absurd especialment clar: no et surts de cap límit, "
+                "només omples tot l'espai. El 95% és un compromís entre "
+                "fiabilitat i utilitat, no una veritat."
+            ),
+            "typical_error": (
+                "Creure que més confiança és sempre millor ('posem 99,99% i "
+                "som més rigorosos') sense veure que l'interval s'eixampla "
+                "fins a [1%, 99%], que és com no dir res."
+            ),
+            "typical_error_label": "CONF_mes_sempre_millor",
+            "key_concepts": ["var_proporcio"],
+            "canonical_question": (
+                """Si en lloc del 95% es demana un 99,99% de confiança (o si la mostra és de només 4 persones), què li passa a l'amplada de l'interval? Per què no demanem sempre el màxim de confiança?"""
+            ),
+            "pistes": [
+                "El marge és z·√(p(1-p)/n). El factor √(p(1-p)/n) no canvia "
+                "si només toques la confiança; el que mou la confiança és z "
+                "(1,96 → 2,58 → 3,89...). En quina direcció va el marge?",
+                "Porta-ho a l'extrem que tu intuïes: amb 4 persones (o amb "
+                "99,99% de confiança), el marge es dispara i l'interval "
+                "s'acosta a [1% ; 99%]. Com que una proporció viu entre 0% i "
+                "100%, no et surts de res: simplement omples tot l'espai "
+                "possible. L'interval és cert però inútil. Aquí és on es veu "
+                "el preu de la confiança.",
+            ],
+            "pistes_per_error": {
+                "CONF_mes_sempre_millor": (
+                    "Més confiança no és gratis. Puja z i això eixampla "
+                    "l'interval. Al límit, un interval del 99,99% (o amb "
+                    "mostra ridícula) s'estira fins a [1%, 99%]: capturaria "
+                    "p quasi sempre, però sense dir-te on és. Per això 95% "
+                    "és un compromís, no una veritat."
+                ),
+            },
+        },
+    ],
+}
+
+
+# =============================================================================
 # Registry públic
 # =============================================================================
 
 PROBLEMS = {
     "IC-001": {
         "id": "IC-001",
-        "title_human": "Interval de confiança",
+        "title_human": "Interval de confiança (mitjana)",
         "problem": _IC001_PROBLEM,
         "prerequisites": _IC001_PREREQUISITES,
         "dependencies": _IC001_DEPENDENCIES,
         "error_catalog": _IC001_ERROR_CATALOG,
         "prereq_id": "PRE-SE",
+    },
+    "IC-002": {
+        "id": "IC-002",
+        "title_human": "Interval de confiança (proporció)",
+        "problem": _IC002_PROBLEM,
+        "prerequisites": _IC002_PREREQUISITES,
+        "dependencies": _IC002_DEPENDENCIES,
+        "error_catalog": _IC002_ERROR_CATALOG,
+        "prereq_id": "PRE-VARP",
     },
 }
 

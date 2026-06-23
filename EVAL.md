@@ -1,12 +1,12 @@
 # Avaluació i tests
 
-Aquest projecte té tres suites de test, totes executables sense clau
-Gemini real (els tests stubben les crides al model). Total: **172
+Aquest projecte té sis suites de test, totes executables sense clau
+Gemini real (els tests stubben les crides al model). Total: **275
 tests**.
 
 ## Suites
 
-### `test_tutor_turn.py` — 71 tests
+### `test_tutor_turn.py` — 74 tests
 
 Cobreix les mecàniques de la funció pública `llm.tutor_turn()`:
 
@@ -16,15 +16,15 @@ Cobreix les mecàniques de la funció pública `llm.tutor_turn()`:
 - Validació d'invariants del transcript (no buit, acaba en student,
   alternança user/model).
 - Construcció correcta del multi-turn `contents` passat a Gemini.
-- Carrega i interpolació del system prompt.
+- Carrega i interpolació del system prompt (per problema).
 - Injecció del marcador de posició al darrer missatge user.
 - Format del marcador a tots els estats possibles (pas normal, reforç
   actiu, sense posició).
 
-### `test_simulator_state.py` — 69 tests
+### `test_simulator_state.py` — 83 tests
 
-Cobreix la màquina d'estats compartida entre simulator i app, i el
-bloc `quality_signals`:
+Cobreix la màquina d'estats compartida entre simulator i app, el
+bloc `quality_signals`, i el registry de problemes (dos problemes):
 
 - Transicions `stay` / `advance` / `retreat_to_prereq` des de tots els
   estats possibles.
@@ -38,8 +38,10 @@ bloc `quality_signals`:
   rastre (no del rellotge actual, regressió del bug que va donar
   durades absurdes en processar JSONs antics).
 - `format_quality_signals` per al render terminal.
+- Registry: presència d'IC-001 i IC-002, `list_ids()` retorna dues
+  entrades, bundles ben formats per a tots dos.
 
-### `test_app.py` — 32 tests
+### `test_app.py` — 79 tests
 
 Cobreix els helpers de l'app Streamlit (la lògica que no és UI):
 
@@ -52,12 +54,25 @@ Cobreix els helpers de l'app Streamlit (la lògica que no és UI):
 - `determine_turn_color` — color final segons acció i context.
 - `position_label` — badge del torn segons l'estat.
 
+### Suites addicionals
+
+- **`test_enrichment.py`** — 30 tests de l'enriquiment determinista
+  (Python injecta enunciats i pistes en avançar/retrocedir) i del mode
+  de reserva sense IA (heurística per paraules clau).
+- **`test_cortesia.py`** — 6 tests del tracte als senyals de tancament
+  i de detecció de torns generats per error.
+- **`test_enunciat_length.py`** — 3 tests que validen que les preguntes
+  canòniques i els enunciats dels passos existeixen i no són massa llargs.
+
 ## Execució
 
 ```bash
 python3 test_tutor_turn.py        # ~1s
 python3 test_simulator_state.py   # ~1s
 python3 test_app.py               # ~1s
+python3 test_enrichment.py        # ~1s
+python3 test_cortesia.py          # ~1s
+python3 test_enunciat_length.py   # ~1s
 ```
 
 Cada suite imprimeix `✓` o `✗` per test i un resum al final. Codi
