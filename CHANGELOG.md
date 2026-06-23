@@ -33,6 +33,20 @@ natural [0, 1] fa que el cas extrem sigui omplir tot el rang possible
 més net que el de la mitjana perquè cap valor és impossible, només
 inútil.
 
+**Redisseny del Pas 1 i el Pas 2 d'IC-002.** El Pas 1 passa a obrir
+amb una pregunta única i oberta ("de què depèn la incertesa del
+marge?"), autònoma (cold-start, sense recolzar-se en cap record
+d'IC-001) i sense regalar la resposta; les branques (mida de mostra,
+p(1-p), contraexemple del 90%) viuen a les pistes. El biaix es trasllada
+dins de l'enunciat (es pregunta a la primera classe de les 8h), i el
+Pas 2 l'analitza en lloc de descobrir-lo: s'introdueix una segona
+enquesta a les 11.30h (mateixa n, 58% en lloc de 45%, interval
+[48,3%; 67,7%]) com a evidència sorpresa que prova el biaix per
+desplaçament. Dues regles pedagògiques noves al prompt: aparcar el
+biaix si surt al Pas 1 (és bona intuïció, però toca al Pas 2), i tractar
+la de les 11.30h com a "menys dolenta", no "la verdadera". Codis d'error
+nous: `BIAS_premature` i `BIAS_1130_es_veritat`.
+
 Canvis:
 
 - **`problem.py`**: catàleg d'errors, dependències, prerequisit, enunciat

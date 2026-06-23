@@ -298,6 +298,19 @@ _IC002_ERROR_CATALOG = {
         "mai el BIAIX (el desplaçament del centre): una mostra esbiaixada "
         "gran és igual de descentrada, només amb més falsa seguretat."
     ),
+    "BIAS_1130_es_veritat": (
+        "Tracta l'enquesta de les 11.30h com «la verdadera» en lloc de "
+        "«menys dolenta». No veu que canviar l'hora redueix el biaix però "
+        "no l'elimina (encara pot faltar algun absentista total), i que "
+        "la lliçó és que el desplaçament entre les dues xifres DEMOSTRA "
+        "l'existència de biaix, no que la segona sigui correcta."
+    ),
+    "BIAS_premature": (
+        "Treu el problema del biaix de selecció durant el Pas 1 (que "
+        "treballa la construcció del marge). No és un error conceptual "
+        "—és bona intuïció—, però toca aparcar-lo: el Pas 1 ha de "
+        "centrar-se en d'on surt el marge, i el biaix es treballa al Pas 2."
+    ),
     "CONF_mes_sempre_millor": (
         "Creu que més confiança és sempre millor (99,99% > 95%), sense "
         "veure el cost: pujar la confiança eixampla l'interval fins a "
@@ -367,12 +380,12 @@ _IC002_PROBLEM = {
     "id": "IC-002",
     "tema": "Interval de confiança per a una proporció: variància lligada a p, biaix i nivell de confiança",
     "enunciat": (
-        """El mateix equip de salut pública vol estimar ara quin PERCENTATGE dels adolescents de 14 a 16 anys escolaritzats a la ciutat dorm estrictament menys de 7 hores les nits de diari (de diumenge a dijous). En lloc de mesurar quantes hores dorm cadascú, només es registra una resposta sí/no: «dorms menys de 7 hores?».
+        """Es vol estimar quin PERCENTATGE dels adolescents de 14 a 16 anys d'una ciutat dorm menys de 7 hores les nits de diari (de diumenge a dijous).
 
-D'una mostra aleatòria de n = 100 adolescents, 45 responen que sí. La proporció mostral és, doncs:
+Per fer-ho, durant una setmana es pregunta cada matí, a l'entrada de la primera classe de les 8h, a adolescents triats a l'atzar: «aquesta nit has dormit menys de 7 hores?». Es recullen 100 respostes en total (repartides de dilluns a divendres). En resulten 45 «sí» de 100, és a dir una proporció mostral:
   - p̂ = 45/100 = 0,45 (un 45%)
 
-Aquí la variància no s'estima a part: per a una variable sí/no, la dispersió ja ve donada per p(1-p). L'error estàndard és √(p̂(1−p̂)/n), i com que no estimem cap σ externa, s'usa la distribució normal (z = 1,96 per al 95%). S'obté un interval de confiança del 95% per a la proporció poblacional p:
+Amb aquestes dades es construeix un interval de confiança del 95% per a la proporció poblacional p. La dispersió no s'estima a part: per a una variable sí/no, ja ve donada per p̂(1−p̂). L'error estàndard és √(p̂(1−p̂)/n) i, com que no s'estima cap altra cosa, s'usa la distribució normal (z = 1,96 per al 95%). S'obté:
 
   [0,352 ; 0,548] = [35,2% ; 54,8%]"""
     ),
@@ -381,97 +394,121 @@ Aquí la variància no s'estima a part: per a una variable sí/no, la dispersió
         {
             "id": 1,
             "text": (
-                """L'interval és [35,2% ; 54,8%], centrat en p̂ = 45% amb un marge de ±9,8 punts. Però fixa't en una cosa curiosa: aquí no hem mesurat cap desviació estàndard de les dades, com fèiem amb les hores. D'on surt, doncs, la dispersió que entra al marge? I per què, si el percentatge hagués sortit del 90% en lloc del 45%, el marge seria més petit?"""
+                """L'interval és [35,2% ; 54,8%]: un marge de ±9,8 punts al voltant del 45%. Aquest marge mesura la incertesa de l'estimació. De què depèn, aquesta incertesa? Què la faria més gran o més petita?"""
             ),
             "expected_summary": (
-                "Per a una variable sí/no, la variància no és lliure: està "
-                "LLIGADA a p i val p(1-p). Per això no cal mesurar cap "
-                "desviació estàndard a part — el percentatge ja conté la "
-                "seva pròpia dispersió. L'error estàndard és √(p̂(1−p̂)/n). "
-                "I com que p(1-p) és MÀXIMA a 0,5 i petita als extrems, un "
-                "p̂ del 90% (proper a l'extrem) dona menys variància i per "
-                "tant marge més petit que un p̂ del 45% (proper a la meitat)."
+                "La incertesa (el marge) depèn de dues coses: la mida de la "
+                "mostra n i el valor de la proporció. L'error estàndard és "
+                "√(p(1-p)/n): més n → menys incertesa (sota arrel). I la "
+                "dispersió no s'estima a part — surt de la pròpia proporció, "
+                "p(1-p), que és MÀXIMA a 0,5 i petita als extrems. Per això, "
+                "amb un p̂ del 90% (proper a l'extrem) el marge seria més "
+                "petit que amb el 45% (proper a la meitat): com més clar és "
+                "el resultat, més precisa l'estimació."
             ),
             "typical_error": (
-                "Buscar una desviació estàndard externa com si calgués "
-                "mesurar-la a part (com amb les hores), sense veure que la "
-                "variància d'una proporció ja surt de p(1-p); o creure que "
-                "la precisió no depèn de quin sigui el percentatge."
+                "Creure que cal una desviació estàndard externa per al marge "
+                "(sense veure que la dispersió surt sola de p(1-p)); o pensar "
+                "que la precisió no depèn de quin sigui el percentatge."
             ),
             "typical_error_label": "PROP_se_lliure",
             "key_concepts": ["var_proporcio"],
             "canonical_question": (
-                """Si aquí no mesurem cap desviació estàndard de les dades, d'on surt la dispersió que entra al marge ±9,8 punts? I per què amb un p̂ del 90% el marge seria més petit que amb el 45%?"""
+                """De què depèn la incertesa del marge ±9,8 punts de l'interval [35,2% ; 54,8%]? Què la faria més gran o més petita?"""
             ),
             "pistes": [
-                """Per a una variable sí/no no hi ha una 's' que mesurar a part: la dispersió surt sola de la pròpia proporció. Quina expressió, feta només amb p, fa de variància? Mira on és més gran: a p=0,5 o als extrems?""",
-                "L'error estàndard d'una proporció és √(p(1-p)/n). El factor "
-                "p(1-p) val 0,25 a p=0,5 (màxim) i baixa cap a 0 als "
-                "extrems. Per això un p̂ del 90% té menys variància (0,09) "
-                "que un del 45% (≈0,25): marge més petit.",
+                """Pensa en dos factors. Un: quanta gent has preguntat (la mida de la mostra). L'altre: com de repartides estan les respostes (si està 50-50 o si gairebé tothom diu el mateix). Com afecta cadascun la incertesa?""",
+                "La incertesa baixa amb la mida de mostra: l'error estàndard "
+                "és √(p(1-p)/n), i la n hi entra sota arrel. I la dispersió "
+                "no es mesura a part: surt de p(1-p), que val 0,25 a p=0,5 "
+                "(màxim) i baixa cap als extrems. Per això un p̂ del 90% "
+                "donaria un marge més petit que el 45%.",
             ],
             "pistes_per_error": {
                 "PROP_se_lliure": (
-                    "No busquis una desviació mesurada a part: amb una "
-                    "variable sí/no, la variància ja ve determinada per la "
-                    "proporció. Quant val la variància d'una Bernoulli en "
-                    "funció de p? És l'expressió p(1-p)."
+                    "No cal cap desviació mesurada a part: amb una variable "
+                    "sí/no, la dispersió ja ve determinada per la proporció. "
+                    "Quina expressió, feta només amb p, fa de variància? "
+                    "(Pista: és p multiplicat per 1−p.)"
                 ),
                 "PROP_var_max_50": (
                     "La precisió SÍ depèn del percentatge. Calcula p(1-p) "
-                    "per a p=0,5 i per a p=0,9: 0,25 contra 0,09. Com més "
-                    "a prop del 50%, més incertesa; com més a l'extrem, "
-                    "menys."
+                    "per a p=0,5 i per a p=0,9: 0,25 contra 0,09. Com més a "
+                    "prop del 50%, més incertesa; com més a l'extrem, menys. "
+                    "Per això el 90% donaria menys marge que el 45%."
+                ),
+                "BIAS_premature": (
+                    "Bona intuïció sobre com es van recollir les dades —hi "
+                    "tornarem de seguida, perquè és important. Però ara "
+                    "quedem-nos en la mecànica: AMB aquestes dades, sigui "
+                    "com sigui que s'hagin recollit, d'on surt el marge "
+                    "±9,8? De quins dos factors depèn?"
                 ),
             },
         },
         {
             "id": 2,
             "text": (
-                """Tot el càlcul assumeix que els 100 adolescents són una mostra aleatòria de tota la ciutat. Imagina que, en realitat, l'enquesta es va passar a les 8 del matí a l'entrada de l'institut: just els qui es van quedar despierts fins tardíssim potser no han vingut o han arribat tard, i no entren a la mostra. El percentatge estimat (45%) seria de fiar? I si, en lloc de 100, n'haguéssim enquestat 5.000 a la mateixa porta i a la mateixa hora, quedaria arreglat?"""
+                """Has construït l'interval correctament. Ara fixem-nos en com es van recollir les dades. S'ha repetit exactament el mateix estudi, amb la mateixa mida de mostra (n = 100), però preguntant a les 11.30h en lloc de a les 8h. I el resultat ha canviat: ara surten 58 «sí» de 100 (un 58%), amb interval [48,3% ; 67,7%]. Per què, si és la mateixa ciutat i la mateixa mida de mostra, els dos intervals surten desplaçats? Quina de les dues enquestes t'has de creure més?"""
             ),
             "expected_summary": (
-                "La fórmula assumeix que la mostra representa la població. "
-                "Si el mètode de mostreig deixa fora un subgrup sencer "
-                "(precisament els qui dormen poc, que són els que ens "
-                "interessa comptar!), p̂ deixa d'estimar p sense biaix: el "
-                "percentatge surt esbiaixat cap avall (n'hem perdut justament "
-                "dels qui dormen <7h). L'interval pot ser PRECÍS però "
-                "DESCENTRAT. Augmentar n a 5.000 estreny l'interval (via "
-                "√(p(1-p)/n)) però NO toca el centre: una mostra esbiaixada "
-                "gran és igual de descentrada, només amb més falsa seguretat. "
-                "n ataca la variància, mai el biaix."
+                "A les 8h, a la primera classe, en falten justament els qui "
+                "van dormir molt poc: alguns es van adormir i no van arribar "
+                "a primera hora. I aquests són precisament «sí» (dormen <7h). "
+                "Per això l'enquesta de les 8h en perd, i el 45% INFRAVALORA "
+                "el percentatge real (l'interval queda desplaçat cap avall). "
+                "A les 11.30h ja han arribat gairebé tots, fins i tot els que "
+                "es van adormir, i per això surten més «sí» (58%). El "
+                "desplaçament entre els dos intervals és la prova que el "
+                "MÈTODE de mostreig influeix en el resultat: hi ha biaix de "
+                "selecció. PERÒ la de les 11.30h no és «la verdadera» — només "
+                "és MENYS dolenta (encara pot faltar algun absentista total). "
+                "I augmentar n no ho arregla: 5.000 enquestes a les 8h "
+                "donarien un interval estretíssim, igual de descentrat."
             ),
             "typical_error": (
-                "Creure que augmentar la mostra (5.000 en lloc de 100) "
-                "arregla el biaix de selecció, confonent una mostra GRAN "
-                "amb una mostra ALEATÒRIA/representativa."
+                "Creure que la de les 11.30h és «la correcta» (en lloc de "
+                "«menys dolenta»); o pensar que augmentar la mostra a les 8h "
+                "corregiria el biaix; o equivocar la direcció (creure que la "
+                "8h sobreestima quan en realitat infravalora)."
             ),
             "typical_error_label": "BIAS_n_no_corregeix",
             "key_concepts": ["var_proporcio"],
             "canonical_question": (
-                """Si l'enquesta es passa només a l'entrada de l'institut a les 8 del matí (i els qui van dormir poc no hi són), el 45% és de fiar? Augmentar la mostra a 5.000 al mateix lloc i hora ho arreglaria?"""
+                """L'enquesta de les 8h dona 45% i la de les 11.30h (mateixa n) dona 58%. Per què es desplacen? Quina t'has de creure més, i augmentar la mostra a les 8h ho arreglaria?"""
             ),
             "pistes": [
-                "Pregunta't qui queda FORA de la mostra amb aquest mètode. "
-                "Justament els qui dormen poc (els que no arriben a l'hora) "
-                "són els que compten per al «sí». Si en falten "
-                "sistemàticament, el percentatge observat va cap amunt o cap "
-                "avall?",
-                "Distingeix dues coses que la n NO afecta igual: l'AMPLADA "
-                "de l'interval (√(p(1-p)/n), que sí baixa amb més mostra) i "
-                "el CENTRE (que el biaix desplaça). Amb 5.000 al mateix lloc, "
-                "l'interval s'estreny... però segueix centrat al percentatge "
-                "equivocat. El biaix es queda.",
+                "Pregunta't qui NO és a la primera classe de les 8h. Els qui "
+                "van dormir 3 o 4 hores, és fàcil que s'hagin adormit i no hi "
+                "siguin. I aquests, responen «sí» o «no» a «has dormit menys "
+                "de 7h?». Si en falten, el percentatge de «sí» surt massa "
+                "alt o massa baix?",
+                "A les 11.30h ja han arribat gairebé tots (es truca a les "
+                "famílies si falten), inclosos els dormidors curts. Per això "
+                "hi ha més «sí». Però compte: vol dir això que el 58% és «el "
+                "valor verdader»? O només que és una mesura MENYS esbiaixada "
+                "que la de les 8h?",
+                "Sobre la mida: si repetíssim la de les 8h amb 5.000 persones "
+                "en lloc de 100, l'interval es faria estretíssim... però "
+                "seguirien faltant els qui es van adormir. El centre no es "
+                "mou. La n redueix l'amplada, no el biaix.",
             ],
             "pistes_per_error": {
                 "BIAS_n_no_corregeix": (
-                    "Pensa-ho amb els extrems: amb 5.000 enquestats a la "
-                    "mateixa porta el matí, l'interval es fa estretíssim. "
-                    "Però si els qui dormen poc segueixen sense aparèixer-hi, "
-                    "el percentatge no s'ha mogut del valor esbiaixat: tens "
-                    "un interval molt precís al voltant del número equivocat. "
-                    "La n redueix la variància, no el biaix."
+                    "Pensa-ho amb els extrems: amb 5.000 enquestats a les 8h, "
+                    "l'interval es fa estretíssim. Però si els qui es van "
+                    "adormir segueixen sense ser a primera hora, el "
+                    "percentatge no s'ha mogut del valor esbiaixat: tens un "
+                    "interval molt precís al voltant del número equivocat. La "
+                    "n redueix la variància, no el biaix."
+                ),
+                "BIAS_1130_es_veritat": (
+                    "Vés amb compte: la de les 11.30h captura MILLOR els "
+                    "dormidors curts, però no perfectament (algun pot faltar "
+                    "tot el dia). No és «la verdadera», és «menys dolenta». "
+                    "La lliçó no és que el 58% sigui correcte, sinó que el "
+                    "fet que les dues xifres es desplacin tant en canviar "
+                    "l'hora DEMOSTRA que el mètode introdueix biaix."
                 ),
             },
         },
