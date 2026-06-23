@@ -61,7 +61,7 @@ def _query_flag(name, default=False):
 # Mode docent: ACTIU PER DEFECTE. El panell de senyals (sempre visible, al
 # costat de la conversa) és la vista per a demostracions davant professorat.
 # Per a una sessió amb alumnes cal desactivar-lo EXPLÍCITAMENT amb ?docent=0
-# a la URL: així els codis de malentesa (INT_prob_param, etc.) — vocabulari de
+# a la URL: així els codis de malentesa (CONSTR_s_vs_se, etc.) — vocabulari de
 # docent — no es mostren a l'alumne i l'experiència socràtica queda intacta.
 # El layout és "wide" en mode docent (hi cap la segona columna) i "centered"
 # en mode alumne.
@@ -876,7 +876,7 @@ def render_inspector(state):
     (?docent=1). Quan es renderitza, és SEMPRE VISIBLE — sense toggle ni
     plegar — perquè en una demo en directe els senyals no desapareguin per
     accident. Els alumnes (URL normal) no el veuen mai: els codis de
-    malentesa (INT_prob_param, etc.) són vocabulari de docent i veure'ls en
+    malentesa (CONSTR_s_vs_se, etc.) són vocabulari de docent i veure'ls en
     temps real podria condicionar com respon l'alumne.
     """
     st.markdown(

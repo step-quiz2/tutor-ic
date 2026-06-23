@@ -54,7 +54,7 @@ MAX_TURNS_PER_SESSION = 30
 def _prereq_id_for(state):
     """Retorna l'id del prerequisit del problema actiu a `state`.
 
-    Multi-problema: cada problema té el seu prereq (PRE-PARAM per a
+    Multi-problema: cada problema té el seu prereq (PRE-SE per a
     IC-001). El state guarda el
     `problem_id` de la sessió i d'aquí en deriva el prereq. Si el
     state no porta problem_id (estats heretats o construïts a mà

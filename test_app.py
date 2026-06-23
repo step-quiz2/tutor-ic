@@ -235,7 +235,7 @@ check("pas 2 → 'Pas 2 de 3'",
 check("reforç → 'Reforç → Pas N'",
       app.position_label({
           "current_step": 1,
-          "active_prereq": "PRE-PARAM",
+          "active_prereq": "PRE-SE",
           "step_before_prereq": 1,
       }) == "Reforç → Pas 1")
 
@@ -430,7 +430,7 @@ st_probe = {
         "action": "stay", "control_parse_ok": True,
         "position_before": {"step": 1, "prereq": None},
         "position_after": {"step": 1, "prereq": None},
-        "diagnostic": "INT_prob_param",
+        "diagnostic": "CONSTR_s_vs_se",
     }],
     "problem_id": "IC-001",
 }
@@ -450,7 +450,7 @@ st_rec = S.new_session("IC-001")
 st_rec["history"].append({
     "turn": 1, "ts": 0.0, "student_msg": "una resposta",
     "tutor_reply": "Molt bé.", "reply_source": "ai", "action": "advance",
-    "objectives_met": ["param_vs_stat"], "diagnostic": None,
+    "objectives_met": ["error_estandard"], "diagnostic": None,
     "control_parse_ok": True,
     "position_before": {"step": 1, "prereq": None},
     "position_after": {"step": 2, "prereq": None},

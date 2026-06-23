@@ -25,21 +25,39 @@ DEPENDENCIES, ERROR_CATALOG), aquests apunten al problema per defecte
 """
 
 # =============================================================================
-# IC-001 — Interpretació d'un interval de confiança
+# IC-001 — Construcció i disseny d'un interval de confiança
 # =============================================================================
+# Tema: NO la (re)interpretació freqüentista del 95%, sinó COM es construeix
+# l'interval (error estàndard, mida de mostra), el biaix de selecció de la
+# mostra, i la tria del nivell de confiança. Vegeu el document de disseny.
 
 _IC001_ERROR_CATALOG = {
-    "INT_prob_param": (
-        "Atribueix probabilitat al paràmetre poblacional. "
-        "Tracta μ com si fos una variable aleatòria."
+    "CONSTR_s_vs_se": (
+        "Confon la dispersió de les DADES (s, com de diferents són els "
+        "individus entre ells) amb la precisió de l'ESTIMACIÓ (l'error "
+        "estàndard s/√n, com de precisa és la mitjana mostral). Espera "
+        "un marge de l'ordre de s, sense veure la divisió per √n."
     ),
-    "INT_prob_sample": (
-        "Confon l'IC amb una afirmació sobre futures mostres."
+    "CONSTR_critic_magic": (
+        "Tracta el valor crític com un 1,96 fix i universal, sense veure "
+        "que surt d'una distribució (t de Student amb n−1 g.ll. quan "
+        "estimem σ amb s) i que depèn de n i del nivell de confiança."
+    ),
+    "BIAS_n_no_corregeix": (
+        "Creu que augmentar la mida de la mostra corregeix el biaix de "
+        "selecció. No veu que n redueix l'AMPLADA (via s/√n) però mai el "
+        "BIAIX (el desplaçament del centre): una mostra esbiaixada gran "
+        "és igual de descentrada, només amb més falsa seguretat."
+    ),
+    "CONF_mes_sempre_millor": (
+        "Creu que més confiança és sempre millor (99,9% > 95%), sense "
+        "veure el cost: pujar la confiança eixampla l'interval i el fa "
+        "menys informatiu. No percep el trade-off fiabilitat ↔ utilitat."
     ),
     "KEY_only": (
-        "Resposta-keyword: conté un terme correcte (constant, fix, "
-        "paràmetre, confiança, repetició, procediment...) però no el "
-        "justifica ni l'aplica a la pregunta concreta. Cal desenvolupar "
+        "Resposta-keyword: conté un terme correcte (error estàndard, "
+        "arrel de n, biaix, representativa, confiança, marge...) però no "
+        "el justifica ni l'aplica a la pregunta concreta. Cal desenvolupar "
         "el raonament: explicar QUÈ vol dir el terme en aquest context "
         "i PER QUÈ respon la pregunta."
     ),
@@ -47,155 +65,204 @@ _IC001_ERROR_CATALOG = {
 }
 
 _IC001_DEPENDENCIES = {
-    "param_vs_stat": {
+    "error_estandard": {
         "description": (
-            "Diferència entre paràmetre poblacional (μ, fix, "
-            "desconegut) i estadístic mostral (x̄, aleatori)."
+            "L'error estàndard de la mitjana és s/√n: mesura la dispersió "
+            "de la mitjana mostral (com de precisa és l'estimació), i és "
+            "diferent de s (la dispersió de les dades). És el concepte que "
+            "explica per què l'interval és estret tot i que les dades són "
+            "disperses, i per què la n entra sota una arrel."
         ),
-        "keywords": ["fix", "fixa", "fixe", "constant", "paràmetre",
-                     "aleatori", "aleatòri", "varia", "no aleatori"],
-        "prerequisite": "PRE-PARAM",
+        "keywords": ["error estàndard", "error estandard", "s/√n", "arrel",
+                     "arrel de n", "√n", "dividir per", "precisió",
+                     "precisio", "estabilitat de la mitjana"],
+        "prerequisite": "PRE-SE",
     },
 }
 
 _IC001_PREREQUISITES = {
-    "PRE-PARAM": {
-        "id": "PRE-PARAM",
-        "concept": "param_vs_stat",
+    "PRE-SE": {
+        "id": "PRE-SE",
+        "concept": "error_estandard",
         "question": (
-            "Quina diferència hi ha entre μ (la mitjana poblacional) i "
-            "x̄ (la mitjana d'una mostra concreta)? "
-            "Quina de les dues és aleatòria i quina és fixa?"
+            "Abans de seguir, aclarim una peça clau. Tens dues quantitats: "
+            "s = 1,6 h, que diu com de diferents són els adolescents entre "
+            "ells, i s/√n, que diu com de precisa és la mitjana de la "
+            "mostra. Per què la mitjana de 100 persones és molt més estable "
+            "(varia molt menys) que una sola persona? I què hi pinta el √n?"
         ),
-        "keywords_required": ["fix", "fixa", "fixe", "constant",
-                              "paràmetre", "no aleatori"],
-        "forbidden_keywords": ["μ és aleatòria", "mu és aleatòria",
-                               "μ és aleatòri", "mu és aleatòri"],
+        "keywords_required": ["arrel", "√n", "dividir", "mitjana",
+                              "precis", "estable", "compensen",
+                              "error estàndard", "error estandard"],
+        "forbidden_keywords": [],
         "explanation": (
-            """**μ és un paràmetre poblacional**: un nombre fix, desconegut, però **no aleatori**.
-**x̄ és un estadístic mostral**: varia d'una mostra a una altra, és **aleatori**.
+            """**Hi ha dues dispersions diferents, i confondre-les és l'error clàssic:**
 
-La inferència freqüentista fa afirmacions probabilístiques sobre x̄ (i els intervals construïts a partir de x̄), però no sobre μ."""
+- **s ≈ 1,6 h** és la dispersió de les **dades**: com de diferents són els adolescents entre ells (n'hi ha de 5 h i de 9 h).
+- **s/√n ≈ 0,16 h** és l'**error estàndard**: la dispersió de la **mitjana mostral**, és a dir, com de precisa és l'estimació.
+
+Quan fas la mitjana de 100 persones, els valors alts i baixos es **compensen** parcialment: la mitjana resultant és molt més estable que un individu sol. Quant més estable? La dispersió cau amb **√n**, no amb n. Per això l'interval és estret (±0,32 h) tot i que les dades són molt disperses (s = 1,6 h).
+
+Conseqüència pràctica: per reduir el marge a la meitat cal **quadruplicar** la mostra (perquè √4 = 2), no doblar-la."""
         ),
     },
 }
 
 _IC001_PROBLEM = {
     "id": "IC-001",
-    "tema": "Interpretació d'un interval de confiança",
+    "tema": "Construcció d'un interval de confiança: error estàndard, biaix i nivell de confiança",
     "enunciat": (
-        """S'ha fet una recerca per estimar quantes hores al dia estudien, durant l'època d'exàmens, els estudiants de primer curs d'un Grau universitari. La població d'interès són aproximadament 250 estudiants.
-A partir d'una mostra aleatòria de 44 estudiants obtenim:
-  - Mitjana mostral: x̄ = 4,0 hores/dia
-  - Desviació estàndard estimada: σ ≈ 2,7 hores
+        """Un equip de salut pública vol estimar quantes hores dormen, de mitjana, els adolescents de 14 a 16 anys escolaritzats en un institut de la ciutat, les **nits de diari** (de diumenge a dijous, amb institut l'endemà). No existeix cap registre d'aquesta dada: cal preguntar-ho a una mostra. Per no barrejar hàbits diferents, les nits de divendres i dissabte queden **fora** de l'estudi.
 
-S'obté un interval de confiança del 95% per a la mitjana (μ):
+Es pregunta a una **mostra aleatòria de n = 100 adolescents** quantes hores van dormir la nit anterior. S'obté:
+  - Mitjana mostral: x̄ = 6,8 hores
+  - Desviació mostral: s = 1,6 hores (molta variabilitat: força alumnes dormen ~5 h, però encara n'hi ha que arriben a 8–9 h)
 
-  [3,2 ; 4,8] hores/dia"""
+Com que la desviació poblacional σ NO es coneix (s'ha estimat amb la pròpia mostra), l'interval es construeix amb la distribució t de Student amb n−1 = 99 graus de llibertat. S'obté un interval de confiança del 95% per a la mitjana poblacional μ:
+
+  [6,48 ; 7,12] hores"""
     ),
-    "dependencies": ["param_vs_stat"],
+    "dependencies": ["error_estandard"],
     "passos": [
         {
             "id": 1,
             "text": (
-                """Explica, amb les teves paraules, com interpretes l'interval següent que té una confiança del 95%:
-
-[3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
+                """L'interval és [6,48 ; 7,12], centrat en x̄ = 6,8 amb un marge de només ±0,32 h (uns 19 minuts). Però els adolescents dormen de manera molt diversa: la desviació de les dades és s = 1,6 h. Com pot ser que el marge sigui tan petit comparat amb com de diferents són els uns dels altres? D'on surt aquest ±0,32, i d'on surt el número que multiplica?"""
             ),
             "expected_summary": (
-                "El 95% és una propietat del procediment: si "
-                "repetíssim el procés amb moltes mostres diferents, "
-                "el 95% dels intervals construïts contindrien μ. "
-                "És una afirmació sobre intervals (que sí són "
-                "aleatoris perquè depenen de la mostra), NO sobre μ."
+                "El marge és (valor crític) · (s/√n). Depèn de l'error "
+                "estàndard s/√n (la dispersió de la MITJANA, no la de les "
+                "dades): la mitjana de 100 és molt més estable que un "
+                "individu, per això ±0,32 i no ±1,6. La n entra sota arrel "
+                "(reduir el marge a la meitat exigeix ×4 la mostra). I el "
+                "valor crític (≈1,984) surt de la taula t amb 99 g.ll., NO "
+                "és un 1,96 màgic: és la t perquè hem estimat σ amb s."
             ),
             "typical_error": (
-                "Dir que hi ha un 95% de probabilitat que μ "
-                "estigui entre 3,2 i 4,8 (atribuir probabilitat al "
-                "paràmetre poblacional)."
+                "Confondre la dispersió de les dades (s = 1,6) amb la "
+                "precisió de l'estimació (s/√n = 0,16) i esperar un marge "
+                "de l'ordre d'1,6; o creure que el valor crític és sempre "
+                "1,96 sense veure que surt d'una distribució t."
             ),
-            "typical_error_label": "INT_prob_param",
-            "key_concepts": ["param_vs_stat"],
+            "typical_error_label": "CONSTR_s_vs_se",
+            "key_concepts": ["error_estandard"],
             "canonical_question": (
-                """Explica, amb les teves paraules, com interpretes l'interval següent que té una confiança del 95%:
-
-[3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
+                """Mirant l'interval [6,48 ; 7,12] amb marge ±0,32 h: com és que el marge és tan petit si la desviació de les dades és s = 1,6 h? D'on surt el ±0,32 i d'on surt el número que multiplica l'error estàndard?"""
             ),
             "pistes": [
-                """La mitjana mostral i l'interval que en surt canviarien si repetíssim l'estudi; en canvi, la mitjana (μ) no canviaria.""",
-                "El 95% és una propietat del *procediment*: de tots els "
-                "intervals que construiríem repetint el mostreig, el 95% "
-                "contindrien μ. No és una afirmació sobre μ.",
+                """Separa dues coses: s = 1,6 h diu com de diferents són els adolescents entre ells; el marge depèn de com de precisa és la MITJANA de 100 persones, que és molt més estable. Quina operació converteix s en aquesta precisió?""",
+                "El marge = (valor crític) · (s/√n). El s/√n = 1,6/10 = 0,16 "
+                "és l'error estàndard. I el número que multiplica (≈1,984) "
+                "no és un 1,96 fix: surt de la taula t amb 99 graus de "
+                "llibertat, justament perquè σ l'hem estimada amb s.",
             ],
+            "pistes_per_error": {
+                "CONSTR_s_vs_se": (
+                    "Fixa't: s = 1,6 h és la dispersió de les DADES (un "
+                    "individu qualsevol pot allunyar-se molt de 6,8). Però "
+                    "l'interval parla de la MITJANA de 100, que és molt més "
+                    "estable. Què fas amb s i amb n per passar d'una a l'altra?"
+                ),
+                "CONSTR_critic_magic": (
+                    "El número que multiplica no és sempre 1,96. Com que no "
+                    "coneixem σ i l'estimem amb s, el crític surt de la "
+                    "distribució t de Student amb n−1 graus de llibertat. "
+                    "Per a n = 100 val ≈1,984. Per a n petita creix molt."
+                ),
+            },
         },
         {
             "id": 2,
             "text": (
-                """Imagina que algú diu:
-«Hi ha una probabilitat del 95% que la mitjana real (μ) estigui entre 3,2h/dia i 4,8h/dia».
-
-Per què aquesta frase és incorrecta?"""
+                """Tot el càlcul assumeix que els 100 adolescents són una mostra aleatòria de tota la ciutat. Imagina que, en realitat, l'enquesta es va passar a les 8 del matí, a l'entrada de l'institut: just els qui es van quedar despierts fins tardíssim potser no han vingut o han arribat tard, i no entren a la mostra. L'interval [6,48 ; 7,12] seguiria sent de fiar? I si, en lloc de 100, n'haguéssim enquestat 5.000 a la mateixa porta i a la mateixa hora, quedaria arreglat?"""
             ),
             "expected_summary": (
-                "Perquè μ és un paràmetre fix, no una variable "
-                "aleatòria. Un cop l'interval [3,2; 4,8] està "
-                "calculat, μ hi és o no hi és — no té sentit parlar "
-                "de probabilitat sobre un fet ja determinat. "
-                "L'aleatorietat era a la mostra (i a l'interval "
-                "construït a partir d'ella), no al paràmetre."
+                "La fórmula assumeix que la mostra representa la població. "
+                "Si el mètode de mostreig deixa fora un subgrup sencer (els "
+                "qui dormen poc i no arriben a l'hora), x̄ deixa d'estimar μ "
+                "sense biaix: l'interval pot ser PRECÍS però DESCENTRAT — "
+                "estret i al lloc equivocat. Augmentar n estreny l'interval "
+                "(via s/√n) però NO toca el centre: una mostra esbiaixada de "
+                "5.000 està igual de mal centrada que una de 100, només amb "
+                "més falsa seguretat. n ataca la variància, mai el biaix."
             ),
             "typical_error": (
-                "Justificar-ho parlant de mostres futures, o "
-                "no veure que un cop construït l'interval ja "
-                "no queda aleatorietat residual."
+                "Creure que augmentar la mostra (5.000 en lloc de 100) "
+                "arregla el biaix de selecció, confonent una mostra GRAN "
+                "amb una mostra ALEATÒRIA/representativa."
             ),
-            "typical_error_label": "INT_prob_param",
-            "key_concepts": ["param_vs_stat"],
+            "typical_error_label": "BIAS_n_no_corregeix",
+            "key_concepts": ["error_estandard"],
             "canonical_question": (
-                """Imagina que algú diu:
-«Hi ha una probabilitat del 95% que la mitjana real (μ) estigui entre 3,2h/dia i 4,8h/dia».
-
-Per què aquesta frase és incorrecta?"""
+                """Si l'enquesta es passa només a l'entrada de l'institut a les 8 del matí (i els qui van dormir poc no hi són), l'interval [6,48 ; 7,12] és de fiar? Augmentar la mostra a 5.000 al mateix lloc i hora ho arreglaria?"""
             ),
             "pistes": [
-                "Què té de diferent μ respecte de la mostra? Una de les "
-                "dues coses és aleatòria i l'altra no.",
-                "Un cop l'interval [3,2 ; 4,8] ja està calculat, μ hi és "
-                "o no hi és. No té sentit parlar de probabilitat sobre un "
-                "fet ja determinat: l'aleatorietat era a la mostra.",
+                "Pregunta't qui queda FORA de la mostra amb aquest mètode, i "
+                "si els qui queden fora dormen diferent dels qui hi entren. "
+                "Si falten sistemàticament els qui dormen poc, cap a on es "
+                "desplaça la mitjana observada?",
+                "Distingeix dues coses que la n NO afecta igual: l'AMPLADA "
+                "de l'interval (s/√n, que sí baixa amb més mostra) i el "
+                "CENTRE (que el biaix desplaça). Amb 5.000 enquestats al "
+                "mateix lloc, l'interval s'estreny... però segueix centrat "
+                "on? El biaix es queda.",
             ],
+            "pistes_per_error": {
+                "BIAS_n_no_corregeix": (
+                    "Pensa-ho amb els extrems: amb 5.000 enquestats a la "
+                    "mateixa porta el matí, l'interval es fa estretíssim. "
+                    "Però si els tardans segueixen sense aparèixer-hi, el "
+                    "centre no s'ha mogut: tens un interval molt precís "
+                    "al voltant del valor equivocat. La n redueix la "
+                    "variància, no el biaix."
+                ),
+            },
         },
         {
             "id": 3,
             "text": (
-                """Per acabar, explica amb les teves paraules com interpretes l'interval [3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
+                """Hem treballat amb un 95% de confiança i ha sortit un marge de ±0,32 h. Si l'equip hagués volgut estar molt més segur —diguem un 99,9%— què li hauria passat a l'amplada de l'interval [6,48 ; 7,12]? I per què, llavors, no demanem sempre el 99,9%, o fins i tot el 99,99%?"""
             ),
             "expected_summary": (
-                "Tenim una *confiança* del 95% que μ estigui dins "
-                "de [3,2; 4,8], entenent 'confiança' com la "
-                "fiabilitat a llarg termini del procediment: si "
-                "repetíssim moltes vegades, el 95% dels intervals "
-                "construïts d'aquesta manera contindrien μ. "
-                "Per a aquest interval concret no podem parlar de "
-                "probabilitat."
+                "El nivell de confiança és una ELECCIÓ, no una constant. "
+                "Marge = (valor crític) · (error estàndard); pujar la "
+                "confiança puja el valor crític (de ≈1,984 a ≈3,392) i per "
+                "tant EIXAMPLA el marge (de ±0,32 a ±0,54). Hi ha un "
+                "trade-off: més confiança = més seguretat de capturar μ a la "
+                "llarga, però interval més ample i menys informatiu. El 95% "
+                "és convenció, un equilibri habitual entre fiabilitat i "
+                "utilitat; no hi ha un nivell 'correcte'."
             ),
             "typical_error": (
-                "Tornar a dir 'probabilitat del 95%' encara que "
-                "estigui demanant una formulació correcta."
+                "Creure que més confiança és sempre millor ('posem 99,99% i "
+                "som més rigorosos') sense veure que l'interval es fa tan "
+                "ample que deixa de ser informatiu."
             ),
-            "typical_error_label": "INT_prob_param",
-            "key_concepts": ["param_vs_stat"],
+            "typical_error_label": "CONF_mes_sempre_millor",
+            "key_concepts": ["error_estandard"],
             "canonical_question": (
-                """Per acabar, explica amb les teves paraules com interpretes l'interval [3,2 ; 4,8] hores/dia, per a la mitjana μ d'hores d'estudi diari."""
+                """Si en lloc del 95% l'equip hagués demanat un 99,9% de confiança, què li passaria a l'amplada de l'interval? I per què no demanem sempre el màxim de confiança possible?"""
             ),
             "pistes": [
-                "Comença la frase amb «Tenim una confiança del 95%...» en "
-                "lloc de «la probabilitat...». El canvi de paraula no és "
-                "cosmètic: és el cor del concepte.",
-                "'Confiança' aquí vol dir la fiabilitat a llarg termini "
-                "del procediment: si el repetíssim moltes vegades, el 95% "
-                "dels intervals construïts contindrien μ.",
+                "El marge té dos factors: el valor crític i l'error "
+                "estàndard. L'error estàndard (s/√n) no canvia si només "
+                "toques la confiança. Quin dels dos factors mou, doncs, el "
+                "nivell de confiança, i en quina direcció?",
+                "Porta-ho a l'extrem: amb 99,99% el crític creix tant que "
+                "l'interval s'eixampla cap a gairebé [6,4 ; 8,0]. Un interval "
+                "tan ample, encara distingeix un bon dormidor d'un de dolent? "
+                "Aquí és on apareix el preu de la confiança.",
             ],
+            "pistes_per_error": {
+                "CONF_mes_sempre_millor": (
+                    "Més confiança no és gratis. Puja el valor crític "
+                    "(1,984 → 3,392 → més encara), i això eixampla "
+                    "l'interval. Al límit, un interval del 99,99% és tan "
+                    "ample que ja no informa de res útil: capturaria μ quasi "
+                    "sempre, però sense dir-te on és. Per això 95% és un "
+                    "compromís, no una veritat."
+                ),
+            },
         },
     ],
 }
@@ -213,7 +280,7 @@ PROBLEMS = {
         "prerequisites": _IC001_PREREQUISITES,
         "dependencies": _IC001_DEPENDENCIES,
         "error_catalog": _IC001_ERROR_CATALOG,
-        "prereq_id": "PRE-PARAM",
+        "prereq_id": "PRE-SE",
     },
 }
 

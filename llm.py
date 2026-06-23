@@ -211,7 +211,7 @@ def _format_position_marker(current_position: dict,
                        al Pas N en acabar)]                  — en reforç
 
     El `<PREREQ_ID>` es prengut directament de `current_position["prereq"]`
-    (per exemple "PRE-PARAM" per a IC-001).
+    (per exemple "PRE-SE" per a IC-001).
 
     Args:
         current_position: {"step": int|None, "prereq": str|None}.
@@ -402,12 +402,13 @@ def _fallback_turn(problem: dict, current_position: dict,
         resp = _normalitza(ultim_student)
         encerts = sum(1 for k in claus if k and k in resp)
         if not demana_pista and encerts >= 2:
-            return _fb_result("Molt bé, aquesta és la distinció clau. "
+            return _fb_result("Molt bé, aquesta és la idea clau. "
                               "Tornem on érem.", "advance")
         return _fb_result(
-            "Pensa-ho així: una de les dues quantitats és un nombre fix "
-            "(encara que no el coneguem) i l'altra canvia cada cop que "
-            "agafem una mostra nova. Quina és quina?", "stay")
+            "Pensa-ho així: la mitjana de moltes persones es mou molt "
+            "menys que un sol individu, perquè els valors alts i baixos "
+            "es compensen. Què fas amb la dispersió de les dades i amb "
+            "n per mesurar aquesta estabilitat?", "stay")
 
     # Pas normal: keywords de les dependències del pas.
     paso = problem["passos"][step - 1] if step else problem["passos"][0]

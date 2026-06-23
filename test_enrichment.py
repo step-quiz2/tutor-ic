@@ -111,7 +111,7 @@ check("advance des de l'últim pas → 'finished'",
 st = S.new_session("IC-001")
 check("retreat des de pas → 'enter_prereq'",
       S.apply_action(st, "retreat_to_prereq") == "enter_prereq"
-      and st["active_prereq"] == "PRE-PARAM")
+      and st["active_prereq"] == "PRE-SE")
 check("retreat dins reforç → 'noop'",
       S.apply_action(st, "retreat_to_prereq") == "noop")
 check("advance dins reforç → 'exit_prereq'",
@@ -219,8 +219,8 @@ check("fallback respon amb una pista i es queda (stay)",
 transcript = [
     {"role": "tutor", "content": problem["passos"][0]["text"]},
     {"role": "student", "content":
-        "μ és un paràmetre fix, constant i no aleatori; la mostra varia "
-        "i és aleatòria, per això el 95% és del procediment."},
+        "El marge depèn de l'error estàndard, que és s dividit per "
+        "l'arrel de n; per això la precisió millora amb més mostra."},
 ]
 res = L.tutor_turn(problem, {"step": 1, "prereq": None}, transcript)
 check("fallback avança quan hi ha prou keywords",

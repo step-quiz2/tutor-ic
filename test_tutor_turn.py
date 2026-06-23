@@ -97,12 +97,12 @@ print("\nTest 2 — action=advance amb objectiu")
 llm._call = stub(
     "Exacte. Passem al pas 2: què vol dir exactament el 95% de confiança?\n"
     "---CONTROL---\n"
-    '{"action": "advance", "objectives_met": ["param_vs_stat"]}'
+    '{"action": "advance", "objectives_met": ["error_estandard"]}'
 )
 result = llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": None}, BASIC_TRANSCRIPT)
 check("action és 'advance'", result["action"] == "advance")
 check("objectives_met conté l'objectiu",
-      result["objectives_met"] == ["param_vs_stat"])
+      result["objectives_met"] == ["error_estandard"])
 
 
 # -----------------------------------------------------------------------------
@@ -302,13 +302,13 @@ check("marcador pas 2", "[Posició actual: Pas 2 de 3]" == m)
 m = llm._format_position_marker({"step": 3, "prereq": None})
 check("marcador pas 3", "[Posició actual: Pas 3 de 3]" == m)
 
-m = llm._format_position_marker({"step": 1, "prereq": "PRE-PARAM"})
-check("marcador reforç inclou 'PRE-PARAM activat'",
-      "PRE-PARAM activat" in m)
+m = llm._format_position_marker({"step": 1, "prereq": "PRE-SE"})
+check("marcador reforç inclou 'PRE-SE activat'",
+      "PRE-SE activat" in m)
 check("marcador reforç inclou 'tornaràs al Pas 1'",
       "tornaràs al Pas 1" in m)
 
-m = llm._format_position_marker({"step": 2, "prereq": "PRE-PARAM"})
+m = llm._format_position_marker({"step": 2, "prereq": "PRE-SE"})
 check("marcador reforç des de pas 2 té 'tornaràs al Pas 2'",
       "tornaràs al Pas 2" in m)
 
@@ -370,11 +370,11 @@ transcript_in_prereq = [
     {"role": "tutor", "content": "Opening"},
     {"role": "student", "content": "Resposta"},
 ]
-llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-PARAM"},
+llm.tutor_turn(PB.PROBLEM, {"step": 1, "prereq": "PRE-SE"},
                transcript_in_prereq)
 last_text = captured["contents"][-1]["parts"][0]["text"]
-check("marcador menciona reforç PRE-PARAM",
-      "PRE-PARAM" in last_text)
+check("marcador menciona reforç PRE-SE",
+      "PRE-SE" in last_text)
 check("marcador menciona retorn a Pas 1",
       "Pas 1" in last_text)
 check("text original preservat", "Resposta" in last_text)

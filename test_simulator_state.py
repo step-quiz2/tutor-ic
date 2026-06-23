@@ -106,8 +106,8 @@ check("finished és True", state["finished"] is True)
 print("\nTest 6 — retreat_to_prereq des de pas 1")
 state = S.new_session()
 S.apply_action(state, "retreat_to_prereq")
-check("active_prereq ara és PRE-PARAM",
-      state["active_prereq"] == "PRE-PARAM")
+check("active_prereq ara és PRE-SE",
+      state["active_prereq"] == "PRE-SE")
 check("step_before_prereq guardat com a 1",
       state["step_before_prereq"] == 1)
 check("current_step preservat", state["current_step"] == 1)
@@ -132,7 +132,7 @@ state = S.new_session()
 state["current_step"] = 2
 S.apply_action(state, "retreat_to_prereq")
 check("primer setup correcte: a prereq, ve de pas 2",
-      state["active_prereq"] == "PRE-PARAM" and state["step_before_prereq"] == 2)
+      state["active_prereq"] == "PRE-SE" and state["step_before_prereq"] == 2)
 S.apply_action(state, "advance")
 check("active_prereq tornat a None", state["active_prereq"] is None)
 check("step_before_prereq netejat", state["step_before_prereq"] is None)
@@ -150,7 +150,7 @@ saved_step = state["step_before_prereq"]
 S.apply_action(state, "retreat_to_prereq")  # no-op
 check("step_before_prereq no s'ha sobreescrit",
       state["step_before_prereq"] == saved_step)
-check("active_prereq segueix actiu", state["active_prereq"] == "PRE-PARAM")
+check("active_prereq segueix actiu", state["active_prereq"] == "PRE-SE")
 
 
 # -----------------------------------------------------------------------------
@@ -165,8 +165,8 @@ check("position_dict: step=1, prereq=None",
 state_p = S.new_session()
 S.apply_action(state_p, "retreat_to_prereq")
 pd_p = S.position_dict(state_p)
-check("position_dict en prereq: prereq=PRE-PARAM",
-      pd_p["prereq"] == "PRE-PARAM")
+check("position_dict en prereq: prereq=PRE-SE",
+      pd_p["prereq"] == "PRE-SE")
 
 ps = S.position_summary(state)
 check("position_summary inclou 'pas 1'", "pas 1" in ps)
@@ -185,7 +185,7 @@ check("position_summary quan finished",
 print("\nTest 11 — position_summary_from amb dicts aïllats")
 ps = S.position_summary_from({"step": 2, "prereq": None})
 check("pas 2 al text", "pas 2" in ps)
-ps = S.position_summary_from({"step": 2, "prereq": "PRE-PARAM"})
+ps = S.position_summary_from({"step": 2, "prereq": "PRE-SE"})
 check("reforç prioritzat sobre pas", "reforç" in ps)
 
 
@@ -301,17 +301,17 @@ state["history"] = [
     {"turn": 3, "student_msg": "Resp 3", "action": "retreat_to_prereq",
      "objectives_met": [], "control_parse_ok": True,
      "position_before": {"step": 1, "prereq": None},
-     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_after": {"step": 1, "prereq": "PRE-SE"},
      "elapsed_seconds": 2.0},
     # 2 torns dins reforç
     {"turn": 4, "student_msg": "(L'alumne demana una pista)",  # pista!
      "action": "stay", "objectives_met": [], "control_parse_ok": True,
-     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
-     "position_after": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_before": {"step": 1, "prereq": "PRE-SE"},
+     "position_after": {"step": 1, "prereq": "PRE-SE"},
      "elapsed_seconds": 1.5},
     {"turn": 5, "student_msg": "Resp 5", "action": "advance",
      "objectives_met": [], "control_parse_ok": True,
-     "position_before": {"step": 1, "prereq": "PRE-PARAM"},
+     "position_before": {"step": 1, "prereq": "PRE-SE"},
      "position_after": {"step": 1, "prereq": None},
      "elapsed_seconds": 1.0},
     # Avancen fins finalitzar
@@ -445,8 +445,8 @@ check("IC-001: enunciat IC al transcript[0]",
 print("\nTest MP5 — retreat_to_prereq usa el prereq del problema actiu")
 state_ic = S.new_session("IC-001")
 S.apply_action(state_ic, "retreat_to_prereq")
-check("IC-001: active_prereq == PRE-PARAM",
-      state_ic["active_prereq"] == "PRE-PARAM")
+check("IC-001: active_prereq == PRE-SE",
+      state_ic["active_prereq"] == "PRE-SE")
 
 print("\nTest MP6 — new_session() sense args usa DEFAULT_PROBLEM_ID")
 state_default = S.new_session()
